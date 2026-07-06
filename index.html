@@ -50,11 +50,14 @@
       <div id="list"><div class="empty">Pick your extracted Takeout folder.</div></div>
       <div class="panel-title">Activities (map)</div>
       <div id="activities"></div>
+      <div class="panel-title">ECG readings</div>
+      <div id="ecgreadings"></div>
     </aside>
     <section>
       <div class="tabs">
         <div class="tab active" data-view="chart">Chart</div>
         <div class="tab" data-view="map">Map</div>
+        <div class="tab" data-view="ecg">ECG</div>
       </div>
       <div class="toolbar">
         <span id="status"></span>
@@ -62,10 +65,12 @@
           <select id="colorby"></select>
           <span id="legend"></span>
         </span>
+        <span id="ecgmeta" class="hidden"></span>
       </div>
       <div class="view">
         <div id="chart"></div>
         <div id="map" class="hidden"></div>
+        <div id="ecg" class="hidden"></div>
       </div>
     </section>
   </main>

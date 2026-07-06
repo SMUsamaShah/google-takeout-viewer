@@ -33,6 +33,12 @@ Ordered `<Trackpoint>`s. In this export, `Position` (lat/lon) and `HeartRateBpm`
 trackpoint** — they interleave. So a track's GPS path and any scalar values are separate streams,
 combined later by timestamp. Only ~925 of ~2,400 activities contain GPS.
 
+### ECG readings — `Takeout/Google Health/Atrial Fibrillation ECG/afib_ecg_reading_<epochMs>.csv`
+One reading per file: a header row + one data row. `waveform_samples` is a bracketed,
+whitespace-separated integer array (raw ADC counts). 7,500 samples span 30 s = **250 Hz**. Metadata
+includes `result_classification` (NSR, atrial fibrillation, high/low HR, inconclusive, unclassifiable),
+`heart_rate` and device. The sample rate and any mV calibration are **not** in the export.
+
 ## Data model
 
 **Series** (scalar time series):
@@ -46,15 +52,22 @@ Full resolution, no stored aggregation — zooming reveals raw samples.
 { id, sport, start, end, t, lat, lon, alt }   // parallel Float64Arrays, one per GPS point
 ```
 
+**ECGReading** (waveform):
+```
+{ id, timeMs, classification, heartRate, device, sampleRate, samples: Float64Array }
+```
+
 ## Flow
 
 1. Pick the extracted Takeout folder (`<input webkitdirectory>`). Nothing is read yet.
-2. Sidebar lists Fit data files (for the chart, matched + grouped by type) and TCX activities
-   (for the map, newest first; date/sport/duration parsed from the filename).
+2. Sidebar lists Fit data files (chart, grouped by type), TCX activities (map, newest first) and
+   ECG readings (newest first). Activity and ECG list labels come from the filename; the file is
+   read only on click.
 3. Heart rate + speed auto-load (largest file per type = merged superset) for an immediate chart
    and a ready colour source for the map.
 4. Ticking a data file parses it once (cached) and adds it to the chart.
 5. Clicking an activity parses that TCX and, if it has GPS, shows it on the map.
+6. Clicking an ECG reading parses that CSV and shows its waveform.
 
 ## Chart
 
@@ -70,6 +83,13 @@ track's timestamps against a selected Series (`core/timejoin.js`, nearest sample
 search, NaN beyond a 120 s gap). A "colour by" dropdown lists loaded scalar series (default heart
 rate). NaN gaps are carry-filled so the ramp stays continuous; a track with no nearby colour data
 is drawn as a plain line.
+
+## ECG
+
+A dedicated uPlot instance (non-time x-axis) plots amplitude (raw ADC) vs time in seconds; vertical
+gridlines every 0.2 s give the standard ECG time reference. Wheel/drag zoom inspects individual
+beats. The reading's classification, heart rate, device and duration are shown alongside. Amplitude
+is raw ADC counts — the export carries no mV calibration.
 
 ## Extending to a new data type
 
@@ -87,5 +107,8 @@ Add one file in `parsers/` exporting `{ match(name), parse(text, name) -> Series
 - `merge_speed` includes driving/cycling (seen to ~22 m/s), not just walking.
 - ≥3 chart units share two y-axes and can overlap. Parsing a 60–75 MB merge file blocks the main
   thread ~0.5–1 s (status shown; a Web Worker is the future fix).
-- Not yet handled: `All Sessions/*.json`, CSV daily metrics, and `Google Health/*` (SpO2, sleep,
-  stress, etc.).
+- ECG amplitude is uncalibrated raw ADC (no mV in export); the 250 Hz rate is the documented
+  device rate, not stated in the files. Only `afib_ecg_reading_*.csv` is read; the equivalent
+  consolidated `EcgUserData.csv` (comma-separated waveform) is ignored to avoid duplicate readings.
+- Not yet handled: `All Sessions/*.json`, CSV daily metrics, and the rest of `Google Health/*`
+  (SpO2, sleep, stress, temperature, etc.).

@@ -2,6 +2,22 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 18. ECG rendered with a dedicated non-time uPlot, not chart.js
+An ECG strip is one waveform with an x-axis in seconds-from-start, not epoch time, and no union
+alignment across series. Bending chart.js (built for multi-series epoch-time overlay) to fit would
+be more code than a small dedicated renderer. ui/ecg.js reuses uPlot but with its own config.
+
+## 17. Assume 250 Hz, plot raw ADC amplitude
+The export includes neither a sample rate nor a mV calibration. 7,500 samples over a 30 s reading
+is exactly 250 Hz, the documented rate for this device, so that constant is used to build the time
+axis. Amplitude stays in raw ADC counts, labelled as such, rather than inventing a mV scale.
+
+## 16. ECG source = afib_ecg_reading_*.csv, not EcgUserData.csv
+The same readings appear in two shapes: individual `afib_ecg_reading_*.csv` files (one reading each,
+whitespace-separated waveform) and a consolidated `EcgUserData.csv` (comma-separated waveform). The
+individual files map cleanly to "one reading = one list item" and avoid parsing a second waveform
+format, so they are the source; the consolidated file is ignored to prevent duplicate readings.
+
 ## 15. Map = Leaflet + OpenStreetMap + leaflet-hotline
 Leaflet with OSM tiles needs no API key and is fully open; `leaflet-hotline` colours a polyline by
 a per-point value, which is exactly the "colour the track by heart rate/speed" ask. All three load

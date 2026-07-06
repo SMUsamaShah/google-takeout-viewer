@@ -7,15 +7,19 @@ import { findParser } from '../core/registry.js';
 import { filesFromInput } from './loader.js';
 import { renderChart, resizeChart } from './chart.js';
 import { renderMap } from './map.js';
+import { renderECG, resizeECG } from './ecg.js';
 import { joinValues } from '../core/timejoin.js';
 import { fitDataPointsParser } from '../parsers/fit-datapoints.js'; // registers
 import { tcxParser } from '../parsers/tcx.js';                      // registers
+import { ecgParser } from '../parsers/ecg.js';                      // registers
 
 const el = (id) => document.getElementById(id);
 const seriesCache = new Map(); // data-file name -> Series
 let dataEntries = [];          // parseable Fit "All Data" files
 let actEntries = [];           // TCX activity files
+let ecgEntries = [];           // ECG reading files
 let currentTrack = null;       // parsed track shown on the map
+let currentReading = null;     // parsed ECG reading shown on the ECG view
 
 // ---- folder load -------------------------------------------------------------
 el('folder').addEventListener('change', async (e) => {
@@ -31,8 +35,14 @@ el('folder').addEventListener('change', async (e) => {
     .map((f) => ({ ...f, ...fromActivityName(f.name) }))
     .sort((a, b) => b.date.localeCompare(a.date)); // newest first
 
+  ecgEntries = all
+    .filter((f) => ecgParser.match(f.name))
+    .map((f) => ({ ...f, timeMs: +(f.name.match(/(\d+)\.csv$/) || [, 0])[1] }))
+    .sort((a, b) => b.timeMs - a.timeMs);
+
   buildDataList();
   buildActivityList();
+  buildEcgList();
 
   // Auto-load largest heart-rate and speed file (the merged superset).
   const defaults = [];
@@ -102,6 +112,43 @@ async function openActivity(f) {
   drawMap();
 }
 
+// ---- ECG list ----------------------------------------------------------------
+function buildEcgList() {
+  const box = el('ecgreadings');
+  box.innerHTML = '';
+  for (const f of ecgEntries) {
+    const row = document.createElement('div');
+    row.className = 'act';
+    const d = new Date(f.timeMs);
+    const when = isNaN(d) ? f.name : d.toISOString().slice(0, 16).replace('T', ' ');
+    row.innerHTML = `<span>${when}</span><span class="sport">ECG</span>`;
+    row.addEventListener('click', () => openReading(f));
+    box.appendChild(row);
+  }
+}
+
+async function openReading(f) {
+  showView('ecg');
+  setStatus('Loading ECG …');
+  await new Promise((r) => setTimeout(r));
+  const text = await f.getText();
+  currentReading = ecgParser.parseReading(text, f.name);
+  drawECG();
+}
+
+function drawECG() {
+  if (!currentReading) return;
+  renderECG(el('ecg'), currentReading);
+  const r = currentReading;
+  const when = new Date(r.timeMs);
+  el('ecgmeta').classList.remove('hidden');
+  el('ecgmeta').textContent =
+    `${isNaN(when) ? '' : when.toISOString().slice(0, 16).replace('T', ' ')} · ${r.classification}` +
+    `${r.heartRate ? ' · ' + r.heartRate + ' bpm' : ''}${r.device ? ' · ' + r.device : ''} · ` +
+    `${(r.samples.length / r.sampleRate).toFixed(0)}s @ ${r.sampleRate}Hz`;
+  setStatus('scroll to zoom, drag to select, double-click to reset');
+}
+
 // ---- colour-by control -------------------------------------------------------
 function scalarSeries() {
   // parsed data-file series usable as a colour source
@@ -165,9 +212,12 @@ function showView(view) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   el('chart').classList.toggle('hidden', view !== 'chart');
   el('map').classList.toggle('hidden', view !== 'map');
+  el('ecg').classList.toggle('hidden', view !== 'ecg');
   el('mapctl').classList.toggle('hidden', view !== 'map' || !currentTrack);
+  el('ecgmeta').classList.toggle('hidden', view !== 'ecg' || !currentReading);
   if (view === 'chart') resizeChart(el('chart'));
   if (view === 'map' && currentTrack) drawMap();
+  if (view === 'ecg' && currentReading) { resizeECG(el('ecg')); drawECG(); }
 }
 
 // ---- helpers -----------------------------------------------------------------
