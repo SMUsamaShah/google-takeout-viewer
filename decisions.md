@@ -2,17 +2,20 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
-## 20. Ignore archive_browser.html (the second Takeout zip)
+## 20. Don't parse archive_browser.html, but it is a real manifest (corrected)
 A Takeout download ships two zips: the data, and a small one holding only
-`Takeout/archive_browser.html`. Evaluated whether it could seed the app (a manifest, file list,
-counts, descriptions). It cannot: ~172 KB is bundled jQuery, a 2.6 KB script only toggles tabs,
-and the page carries no file manifest, no counts, no working links (the only non-anchor href is
-`NOT_SET`), and no data unique to this export beyond the account email and product names
-(FIT, FITBIT). Its folder descriptions are generic boilerplate ("could contain up to 4 folders").
-Everything data-specific we already get, more accurately, by scanning the folder. Parsing a 1.6 MB
-templated HTML for ~6 sentences of static copy would couple us to Google's template for near-zero
-gain, so we ignore it. If folder descriptions are ever wanted as UI copy, bake them into our own
-code once rather than parsing the page.
+`Takeout/archive_browser.html`. **Correction to an earlier wrong finding:** that page *does*
+contain a complete manifest — every filename (8,767 nodes here) grouped by folder — plus
+per-product counts and total sizes (Fit 8,173 files / 766.3 MB, Google Health 594 / 153.2 MB).
+The earlier "no manifest" claim came from a bad check: `grep -c` counts matching *lines*, and the
+HTML is minified onto one line, so it reported 1; filenames also sit in `extracted-file-name` text
+nodes, not `href`s, so an href scan found none.
+
+We still don't parse it, for a sound reason this time: the `webkitdirectory` scan already
+enumerates every file **with sizes** and gives access to the file *contents* we need to chart;
+the manifest has names only (no per-file sizes/dates, no data-level info, no working links). So it
+is strictly redundant as a data source. The one idea worth taking from it — a per-product/per-type
+**overview** (counts + sizes) — is computed from our own scan, not by parsing Google's HTML.
 
 ## 19. Chart defaults to a single metric (heart rate)
 Auto-showing heart rate *and* speed produced an unreadable first view: two different-unit scales
