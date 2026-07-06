@@ -5,24 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Google Takeout Viewer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     :root { --bg:#fff; --fg:#1a1a1a; --muted:#777; --line:#e6e6e6; --accent:#2e86ab; }
     * { box-sizing: border-box; }
-    body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--fg); background:var(--bg); }
+    body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--fg); }
     header { padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:16px; }
     header h1 { font-size:15px; font-weight:600; margin:0; }
     header .hint { color:var(--muted); font-size:12px; }
     .pick { display:inline-block; padding:6px 12px; border:1px solid var(--accent); color:var(--accent); border-radius:6px; cursor:pointer; font-size:13px; }
     .pick input { display:none; }
     main { display:flex; height:calc(100vh - 51px); }
-    aside { width:280px; border-right:1px solid var(--line); overflow:auto; padding:8px 0; }
-    .group { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:10px 14px 4px; }
+    aside { width:290px; border-right:1px solid var(--line); overflow:auto; }
+    .panel-title { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:12px 14px 4px; position:sticky; top:0; background:var(--bg); }
+    .group { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:8px 14px 2px; }
     .row { display:flex; align-items:center; gap:8px; padding:3px 14px; cursor:pointer; }
     .row:hover { background:#f6f8fa; }
     .row .meta { font-size:12px; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .act { display:flex; justify-content:space-between; padding:4px 14px; cursor:pointer; font-size:13px; }
+    .act:hover { background:#f6f8fa; }
+    .act .sport { color:var(--muted); font-size:12px; }
     section { flex:1; display:flex; flex-direction:column; min-width:0; }
-    #status { padding:6px 14px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); min-height:29px; }
-    #chart { flex:1; padding:8px; }
+    .tabs { display:flex; gap:4px; padding:6px 14px 0; border-bottom:1px solid var(--line); }
+    .tab { padding:5px 12px; font-size:13px; border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; cursor:pointer; color:var(--muted); }
+    .tab.active { color:var(--fg); border-color:var(--line); background:var(--bg); position:relative; top:1px; }
+    .toolbar { padding:6px 14px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:10px; min-height:33px; }
+    .toolbar select { font-size:12px; }
+    .view { flex:1; min-height:0; }
+    #chart { padding:8px; height:100%; }
+    #map { height:100%; }
+    .hidden { display:none; }
     .empty { color:var(--muted); padding:40px; text-align:center; }
   </style>
 </head>
@@ -30,16 +42,36 @@
   <header>
     <h1>Google Takeout Viewer</h1>
     <label class="pick">Choose Takeout folder<input type="file" id="folder" webkitdirectory multiple></label>
-    <span class="hint">health data — heart rate, speed, and more</span>
+    <span class="hint">health data — chart metrics, map GPS activities</span>
   </header>
   <main>
-    <aside><div id="list"><div class="empty">Pick your extracted Takeout folder to begin.</div></div></aside>
+    <aside>
+      <div class="panel-title">Data (chart)</div>
+      <div id="list"><div class="empty">Pick your extracted Takeout folder.</div></div>
+      <div class="panel-title">Activities (map)</div>
+      <div id="activities"></div>
+    </aside>
     <section>
-      <div id="status"></div>
-      <div id="chart"></div>
+      <div class="tabs">
+        <div class="tab active" data-view="chart">Chart</div>
+        <div class="tab" data-view="map">Map</div>
+      </div>
+      <div class="toolbar">
+        <span id="status"></span>
+        <span id="mapctl" class="hidden">colour by
+          <select id="colorby"></select>
+          <span id="legend"></span>
+        </span>
+      </div>
+      <div class="view">
+        <div id="chart"></div>
+        <div id="map" class="hidden"></div>
+      </div>
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-hotline@0.4.0/dist/leaflet.hotline.min.js"></script>
   <script type="module" src="./ui/app.js"></script>
 </body>
 </html>

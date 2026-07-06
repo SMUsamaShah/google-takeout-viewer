@@ -5,12 +5,15 @@ Source of truth for what the app is and how it behaves. Keep this current when b
 ## Purpose
 
 A plain HTML/JS (no build step) viewer for locally-held Google Takeout exports. Runs entirely
-in the browser; no upload, no server. Current scope: **health data** (Google Fit / Google Health),
-starting with heart rate and speed, overlaid on a shared time axis.
+in the browser; no upload, no server. Current scope: **health data** (Google Fit / Google Health).
+Two views over one folder load:
+
+- **Chart** — scalar time series (heart rate, speed, …) overlaid on a shared time axis.
+- **Map** — a GPS activity drawn on OpenStreetMap, its line coloured by a chosen series.
 
 ## Supported input (v1)
 
-Files under `Takeout/Fit/All Data/` named `{raw|derived}_com.google.<type>_<source>.json`.
+### Fit "All Data" JSON — `Takeout/Fit/All Data/{raw|derived}_com.google.<type>_<source>.json`
 All share one schema:
 
 ```json
@@ -18,71 +21,71 @@ All share one schema:
   "Data Points": [
     { "fitValue": [ { "value": { "fpVal": 68 } } ],
       "startTimeNanos": 1783031299000000000,
-      "dataTypeName": "com.google.heart_rate.bpm" }
-  ] }
+      "dataTypeName": "com.google.heart_rate.bpm" } ] }
 ```
 
 - Value key is `fpVal` (continuous) or `intVal` (counts); parser reads whichever is present.
-- `startTimeNanos` is nanosecond epoch. It exceeds 2^53, so JSON.parse loses sub-second
-  precision — harmless, we chart at ≥ 1s resolution.
-- One file = one series (one `Data Source`).
+- `startTimeNanos` exceeds 2^53, so JSON.parse loses sub-second precision — harmless at ≥1s.
+- One file = one series. Merge files are **not** time-ordered, so the parser sorts.
 
-Known present types include: heart_rate.bpm, speed, step_count.delta, distance.delta,
-calories.expended, weight, respiratory_rate, active_minutes. Unmapped types still load,
-labelled by their raw type name.
+### TCX activities — `Takeout/Fit/Activities/*.tcx` (Garmin XML)
+Ordered `<Trackpoint>`s. In this export, `Position` (lat/lon) and `HeartRateBpm` **never share a
+trackpoint** — they interleave. So a track's GPS path and any scalar values are separate streams,
+combined later by timestamp. Only ~925 of ~2,400 activities contain GPS.
 
 ## Data model
 
-A **Series** is:
-
+**Series** (scalar time series):
 ```
-{ id, dataType, label, unit, xs: Float64Array, ys: Float64Array }
+{ id, dataType, label, unit, xs: Float64Array /*sec, ascending*/, ys: Float64Array }
 ```
+Full resolution, no stored aggregation — zooming reveals raw samples.
 
-- `xs` = unix timestamps in **seconds** (uPlot's native time unit), strictly ascending.
-- `ys` = values, same length as `xs`.
-- Full resolution is kept in memory. **No aggregation is stored**, so zooming in shows the
-  original raw samples.
+**Track** (GPS path):
+```
+{ id, sport, start, end, t, lat, lon, alt }   // parallel Float64Arrays, one per GPS point
+```
 
 ## Flow
 
-1. User picks their extracted Takeout folder (`<input webkitdirectory>`).
-2. Files are listed but **not read**. Only those matching a registered parser are shown,
-   grouped by type, each with its `raw`/`derived` kind and size.
-3. Heart rate + speed are auto-selected — the **largest file per type**, which is the merged
-   (deduplicated, most-complete) series. Chosen by file size alone, without parsing.
-4. Ticking a file parses it once (cached) and adds it to the chart. Unticking removes it.
-
-## Alignment (multi-series overlay)
-
-uPlot needs all series on one shared x array. `core/align.js` builds the **union** of every
-selected series' timestamps and fills each series' values into it, leaving `NaN` where a series
-has no sample (uPlot renders `NaN` as a gap and ignores it when ranging the y-axis). Raw values
-are preserved exactly — no resampling.
+1. Pick the extracted Takeout folder (`<input webkitdirectory>`). Nothing is read yet.
+2. Sidebar lists Fit data files (for the chart, matched + grouped by type) and TCX activities
+   (for the map, newest first; date/sport/duration parsed from the filename).
+3. Heart rate + speed auto-load (largest file per type = merged superset) for an immediate chart
+   and a ready colour source for the map.
+4. Ticking a data file parses it once (cached) and adds it to the chart.
+5. Clicking an activity parses that TCX and, if it has GPS, shows it on the map.
 
 ## Chart
 
-- Library: uPlot (loaded from CDN as a global).
-- One line per series. Series are grouped onto y-scales/axes **by unit**; the first two units
-  get left/right axes. (≥ 3 units currently overlap on those two sides — see limitations.)
-- Zoom: mouse wheel zooms toward the cursor; drag selects a range; double-click resets to full.
-  Zooming reveals raw points because nothing is aggregated.
+uPlot (CDN global). One line per series; series grouped onto y-axes by unit (first two units get
+left/right axes). Wheel zooms toward cursor, drag selects, double-click resets. Different series
+sample times are unified via a union timeline with `NaN` gaps (`core/align.js`) — no resampling.
+
+## Map
+
+Leaflet + OpenStreetMap tiles; the track line is coloured by `leaflet-hotline`
+(green→amber→red across the value range). The colour value is produced by **time-joining** the
+track's timestamps against a selected Series (`core/timejoin.js`, nearest sample by binary
+search, NaN beyond a 120 s gap). A "colour by" dropdown lists loaded scalar series (default heart
+rate). NaN gaps are carry-filled so the ramp stays continuous; a track with no nearby colour data
+is drawn as a plain line.
 
 ## Extending to a new data type
 
 Add one file in `parsers/` exporting `{ match(name), parse(text, name) -> Series[] }` and call
-`register(...)`. Nothing else changes. The Fit `All Data` parser already covers every type in
-that folder via the shared schema.
+`register(...)`. The Fit "All Data" parser already covers every scalar type in that folder.
 
 ## Known limitations / caveats
 
-- `merge_speed` includes all movement (observed up to ~22 m/s / 80 km/h), i.e. driving and
-  cycling too — not just walking. A walking-only pace view needs filtering by activity segment
-  or the `All Sessions` WALKING files (future).
-- Pace (min/km) is a trivial transform of speed but not yet exposed; zero-speed samples make it
-  undefined, so it needs handling before charting.
-- ≥ 3 distinct units share the two available y-axes and can overlap.
-- Parsing a 60–75 MB merge file blocks the main thread ~0.5–1 s. Acceptable with a status line;
-  a Web Worker is the future fix.
-- Not yet handled: `Fit/Activities/*.tcx`, `All Sessions/*.json`, CSV daily metrics,
-  and the `Google Health/*` folders (SpO2, sleep, stress, etc.).
+- Colouring GPS by any metric always needs a time-join (GPS and HR never co-occur per point).
+- Heart-rate data begins June 2021, so GPS activities before then can't be HR-coloured (they fall
+  back to a plain line). Speed-from-GPS is a possible future colour source for those.
+- GPS can be sparse within a track (some tracks have a point only every ~100 m); the line is coarse.
+- Activities are listed from filenames without reading them, so a clicked activity may turn out to
+  have no GPS — handled with a message. (Detecting GPS up front would mean reading all ~2,400.)
+- `merge_speed` includes driving/cycling (seen to ~22 m/s), not just walking.
+- ≥3 chart units share two y-axes and can overlap. Parsing a 60–75 MB merge file blocks the main
+  thread ~0.5–1 s (status shown; a Web Worker is the future fix).
+- Not yet handled: `All Sessions/*.json`, CSV daily metrics, and `Google Health/*` (SpO2, sleep,
+  stress, etc.).

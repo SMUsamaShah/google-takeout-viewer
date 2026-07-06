@@ -2,6 +2,37 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 15. Map = Leaflet + OpenStreetMap + leaflet-hotline
+Leaflet with OSM tiles needs no API key and is fully open; `leaflet-hotline` colours a polyline by
+a per-point value, which is exactly the "colour the track by heart rate/speed" ask. All three load
+from CDN (no build step). A per-segment hand-coloured polyline was the fallback; the plugin is less
+code and purpose-built.
+
+## 14. Colour tracks by time-join, not by co-located values
+Verified across all 925 GPS activities: GPS and heart rate are **never** on the same trackpoint. So
+for each GPS point we look up the nearest-in-time value in a chosen Series (binary search,
+`core/timejoin.js`), NaN beyond 120 s. This reuses the existing Series type, works for any metric
+the user selects (not just HR), and decouples "does this file contain HR" from "can we colour by HR".
+
+## 13. Track is a separate type from Series
+A GPS path (2-D, lat/lon over time) is not a scalar time series, so it gets its own struct of
+parallel Float64Arrays rather than being forced into Series. Scalar streams found inside a TCX
+(e.g. its HR trackpoints) are still returned as Series so they can be charted or joined.
+
+## 12. TCX parsed with the browser DOM; JSON merge files parsed manually
+TCX activity files are small (one activity), so `DOMParser` is fine and simplest. The 60–75 MB Fit
+JSON files are extracted straight into typed arrays instead (no DOM, no array-of-objects) because
+size makes allocation the bottleneck there.
+
+## 11. Activities listed from filenames, parsed on click
+The filename encodes date, ISO-8601 duration and sport, so the ~2,400-activity list is built
+without reading any file. GPS presence isn't in the filename and detecting it means reading the
+file, so that check happens on click. Reading all activities up front just to filter was rejected
+as too costly for the benefit.
+
+
+Newest first. Each entry: the decision, why, and what was rejected.
+
 ## 10. Sort each series at parse time
 The merge files are **not** chronologically ordered (verified: first array entry July 2026,
 a later entry June 2022). uPlot and the union alignment both require ascending x. So the parser
