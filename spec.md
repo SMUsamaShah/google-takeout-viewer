@@ -114,3 +114,5 @@ Add one file in `parsers/` exporting `{ match(name), parse(text, name) -> Series
   consolidated `EcgUserData.csv` (comma-separated waveform) is ignored to avoid duplicate readings.
 - Not yet handled: `All Sessions/*.json`, CSV daily metrics, and the rest of `Google Health/*`
   (SpO2, sleep, stress, temperature, etc.).
+- The second Takeout zip (`archive_browser.html`) is intentionally ignored: it is a generic,
+  templated landing page with no file manifest or export-specific data (see decisions.md #20).
