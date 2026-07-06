@@ -2,6 +2,14 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 19. Chart defaults to a single metric (heart rate)
+Auto-showing heart rate *and* speed produced an unreadable first view: two different-unit scales
+overlaid across ~11 years (speed data starts 2015, heart rate 2021), with speed's GPS glitches
+(up to 78 m/s) stretching its axis so normal values flatten. The fix is a default, not new
+machinery: parse both (speed is still needed as a map colour source) but only tick heart rate on
+the chart. Overlaying speed is one click away. Rejected as over-engineering: outlier clamping /
+percentile y-ranges — that hides real (if glitchy) data and adds cleverness for a default-view issue.
+
 ## 18. ECG rendered with a dedicated non-time uPlot, not chart.js
 An ECG strip is one waveform with an x-axis in seconds-from-start, not epoch time, and no union
 alignment across series. Bending chart.js (built for multi-series epoch-time overlay) to fit would

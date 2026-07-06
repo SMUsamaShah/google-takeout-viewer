@@ -44,14 +44,17 @@ el('folder').addEventListener('change', async (e) => {
   buildActivityList();
   buildEcgList();
 
-  // Auto-load largest heart-rate and speed file (the merged superset).
+  // Parse heart rate + speed so both are ready (speed is a map colour source), but only
+  // auto-show heart rate on the chart: overlaying two different-unit metrics across ~11 years
+  // is an unreadable default. Speed is one tick away in the list.
   const defaults = [];
   for (const key of ['heart_rate.bpm', 'speed']) {
     const best = dataEntries.filter((x) => x.typeKey === key).sort((a, b) => b.size - a.size)[0];
     if (best) defaults.push(best);
   }
   await Promise.all(defaults.map(ensureParsed));
-  defaults.forEach((d) => { const cb = el('cb_' + d.name); if (cb) cb.checked = true; });
+  const hr = defaults.find((d) => d.typeKey === 'heart_rate.bpm');
+  if (hr) { const cb = el('cb_' + hr.name); if (cb) cb.checked = true; }
   refreshColorByOptions();
   redrawChart();
 });
