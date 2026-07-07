@@ -9,11 +9,12 @@
 
 import { findParser } from '../core/registry.js';
 import { filesFromInput } from './loader.js';
-import { renderChart, resizeChart } from './chart.js';
+import { renderChart, resizeChart, zoomChart } from './chart.js';
 import { renderMap } from './map.js';
 import { renderECG, resizeECG } from './ecg.js';
 import { joinValues } from '../core/timejoin.js';
 import { fitDataPointsParser } from '../parsers/fit-datapoints.js'; // registers
+import { fitDailyParser } from '../parsers/fit-daily.js';           // registers
 import { tcxParser } from '../parsers/tcx.js';                      // registers
 import { ecgParser } from '../parsers/ecg.js';                      // registers
 
@@ -22,6 +23,7 @@ const seriesCache = new Map();  // file name -> parsed Series
 let metricEntries = [];         // one per metric type: { typeKey, label, best }
 let actEntries = [];            // TCX activities
 let ecgEntries = [];            // ECG readings
+let dailyHR = null;             // daily min/avg/max heart-rate band (fit-daily), overview layer
 let currentTrack = null;
 let currentReading = null;
 
@@ -37,7 +39,13 @@ el('folder').addEventListener('change', async (e) => {
     const cur = byType.get(key);
     if (!cur || f.size > cur.size) byType.set(key, f);
   }
+  // Only list metrics worth charting. The "All Data" folder also holds internal/bookkeeping
+  // streams (goals, sleep attributes), sensor/location dumps, and activity segment/sample
+  // rows that either have no scalar value to plot or aren't health metrics — listing them
+  // just gives the user boxes that draw nothing. Hide those; keep the real health metrics.
+  const HIDE_TYPE = /^(internal|sensor|location|activity|nutrition|hydration)\b/;
   metricEntries = [...byType.entries()]
+    .filter(([typeKey]) => !HIDE_TYPE.test(typeKey))
     .map(([typeKey, best]) => ({ typeKey, best, label: metricLabel(typeKey) }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
@@ -60,9 +68,28 @@ el('folder').addEventListener('change', async (e) => {
   const sp = metricEntries.find((m) => m.typeKey === 'speed');
   if (hr) { await ensureParsed(hr.best); const cb = el('cb_' + hr.typeKey); if (cb) cb.checked = true; }
   if (sp) await ensureParsed(sp.best);
+
+  // Daily heart-rate overview band (one small combined CSV) — the long-term "past vs now"
+  // layer under the raw samples. Parsed once here so it's ready on the first chart draw.
+  const dailyFile = all.find((f) => fitDailyParser.match(f.name));
+  dailyHR = dailyFile ? await ensureParsed(dailyFile) : null;
+
   refreshColorByOptions();
   showView('chart');
   redrawChart();
+
+  // Open on the most recent continuous cluster of heart-rate data rather than the whole
+  // multi-year span. The data is bursty (dense monitoring separated by long gaps), so a
+  // fixed window would often land on emptiness; instead we walk back from the last sample
+  // to the previous multi-day gap. That first view is real, non-aggregated samples you can
+  // read; zooming out reveals the long-term "past vs now" trend via the daily band.
+  const hrS = hr && seriesCache.get(hr.best.name);
+  if (hrS && hrS.xs.length > 1) {
+    const xs = hrS.xs, n = xs.length, GAP = 2 * 86400;
+    let start = 0;
+    for (let i = n - 1; i > 0; i--) { if (xs[i] - xs[i - 1] > GAP) { start = i; break; } }
+    zoomChart(xs[start], xs[n - 1]);
+  }
 });
 
 // ---- sidebar: metrics --------------------------------------------------------
@@ -77,7 +104,16 @@ function buildMetricList() {
     cb.id = 'cb_' + m.typeKey;
     cb.addEventListener('change', async () => {
       showView('chart');
-      if (cb.checked) { cb.disabled = true; await ensureParsed(m.best); cb.disabled = false; }
+      if (cb.checked) {
+        cb.disabled = true;
+        const s = await ensureParsed(m.best);
+        cb.disabled = false;
+        if (!s || !s.xs || s.xs.length === 0) { // nothing to draw — say so instead of a blank chart
+          cb.checked = false;
+          setStatus(`No chartable data in ${m.label}.`);
+          return;
+        }
+      }
       refreshColorByOptions();
       redrawChart();
     });
@@ -208,9 +244,14 @@ function redrawChart() {
   const chosen = metricEntries
     .filter((m) => { const cb = el('cb_' + m.typeKey); return cb && cb.checked; })
     .map((m) => seriesCache.get(m.best.name)).filter(Boolean);
-  renderChart(el('chart'), chosen, buildMarkers(), openMarker);
-  setContext(chosen.length ? chosen.map((s) => s.label).join('  +  ') : 'No metric selected');
-  setStatus(chosen.length ? 'drag to pan · scroll to zoom · shift-drag to select a range · double-click to reset · click a top tick to open an activity/ECG' : 'Tick a metric on the left.');
+  // Daily HR band goes first so it draws underneath the raw metric lines.
+  const showBand = el('showBand').checked && dailyHR;
+  const list = showBand ? [dailyHR, ...chosen] : chosen;
+  renderChart(el('chart'), list, buildMarkers(), openMarker);
+  const names = chosen.map((s) => s.label);
+  if (showBand) names.unshift('Daily heart rate');
+  setContext(names.length ? names.join('  +  ') : 'No metric selected');
+  setStatus(list.length ? 'drag to pan · scroll to zoom · shift-drag to select a range · double-click to reset · click a top tick to open an activity/ECG' : 'Tick a metric on the left.');
 }
 
 // Event markers on the timeline (top ticks): activities and ECG readings, filterable.
@@ -226,6 +267,7 @@ function openMarker(ref) {
   if (ref.kind === 'activity') openActivity(ref.f);
   else openReading(ref.f);
 }
+el('showBand').addEventListener('change', redrawChart);
 el('showAct').addEventListener('change', redrawChart);
 el('showEcg').addEventListener('change', redrawChart);
 

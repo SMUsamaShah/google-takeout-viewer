@@ -40,19 +40,30 @@ export function align(seriesList) {
   }
   const timeline = xs.subarray(0, n);
 
-  // 2. For each series, two-pointer fill into an aligned column (null = gap).
-  const columns = [];
+  // 2. For each series, two-pointer fill into an aligned column (null = gap). A band
+  //    series (fit-daily) also carries parallel `lo`/`hi` arrays (min/max envelope); we
+  //    fill those into their own aligned columns, else push null so indices stay lined up.
+  const columns = [], loColumns = [], hiColumns = [];
   for (const s of seriesList) {
     const col = new Array(n).fill(null);
+    const lo = s.lo ? new Array(n).fill(null) : null;
+    const hi = s.hi ? new Array(n).fill(null) : null;
     let i = 0;
     const sx = s.xs, sy = s.ys, len = sx.length;
     for (let j = 0; j < n; j++) {
       const t = timeline[j];
       while (i < len && sx[i] < t) i++;      // skip stragglers / duplicates
-      if (i < len && sx[i] === t) { col[j] = sy[i]; i++; }
+      if (i < len && sx[i] === t) {
+        col[j] = sy[i];
+        if (lo) lo[j] = s.lo[i];
+        if (hi) hi[j] = s.hi[i];
+        i++;
+      }
     }
     columns.push(col);
+    loColumns.push(lo);
+    hiColumns.push(hi);
   }
 
-  return { xs: timeline, columns };
+  return { xs: timeline, columns, loColumns, hiColumns };
 }

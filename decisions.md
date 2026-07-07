@@ -2,6 +2,40 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 29. Heart-first defaults: curated metrics, recent-cluster first view, markers off
+Three changes so the first thing a heart-focused user sees is useful, not confusing.
+(1) The metric sidebar listed one row per file *type*, including internal/bookkeeping,
+sensor, location and activity-segment streams that have no scalar to plot — ticking them drew
+nothing. We hide those (`^(internal|sensor|location|activity|nutrition|hydration)`) and, when a
+ticked metric parses to no data, say so in the status bar instead of showing a blank chart.
+(2) The chart opened on the full multi-year span, which for bursty data is mostly empty gaps
+with a raw-line smear. It now opens on the most recent continuous heart-rate cluster (walk back
+from the last sample to the previous >2-day gap) — real, non-aggregated samples you can read;
+zoom out for the long-term band. (3) The activity/ECG top-ticks are noise for this use and now
+default off (still toggleable). Rejected: a fixed recent window (e.g. last 90 days) — the data is
+clustered, so a fixed window often lands on emptiness; the cluster walk-back adapts to density.
+
+## 28. Daily heart-rate band as the long-term overview
+The raw stream answers "what was my heart rate at 3pm"; it does not answer "how is my resting
+heart rate trending vs six months ago" — 400k clustered points don't read as a trend, and the
+phone app only exposes 5-minute aggregates anyway. `Fit/Daily activity metrics/Daily activity
+metrics.csv` already carries per-day min/avg/max heart rate for the whole history in one small
+file, so fit-daily.js turns it into a single **band series**: a min→max shaded envelope with the
+daily average as its centre line (daily min doubles as a resting-HR proxy). chart.js renders a
+band series as three uPlot series (min, max invisible + avg line) plus a uPlot `band` fill, on the
+heart-rate scale, under the raw line. It's on by default (toggle in the toolbar) and shares the
+raw samples' zoom, so zoomed out it's the trend and zoomed in it fades behind the real samples.
+
+Gaps are the hard part. On the shared union timeline daily points sit sparsely among the raw
+samples, so the band must bridge those to stay continuous — but must NOT bridge a months-long
+hole into one misleading shape. uPlot's `spanGaps` is all-or-nothing, so: chart.js linearly fills
+min/avg/max between neighbouring days (continuous within data-dense periods) and leaves a null
+wherever days are >14 days apart (a real break), with `spanGaps:false`; and fit-daily.js inserts an
+explicit null "breaker" mid-gap so a break exists even when the two edge days would be adjacent on
+the axis (e.g. band shown alone). ys/lo/hi are plain Arrays so those nulls survive alignment (ADR
+26). Rejected: three separate min/avg/max lines (a filled band reads the range far better);
+resampling the raw stream to daily in-app (the export already did it, losing nothing we need).
+
 ## 27. Drag pans; Shift+drag zoom-selects
 Drag used to draw uPlot's zoom-to-selection box, which left no way to move sideways — you had to
 zoom out, re-center, and zoom back in to scroll the timeline. Now a plain left-drag pans the time
