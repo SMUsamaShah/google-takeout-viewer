@@ -51,13 +51,19 @@ export function renderChart(container, seriesList, markers = [], onMarkerClick =
     height: Math.max(360, container.clientHeight || 480),
     series,
     axes,
-    cursor: { drag: { x: true, y: false } },
+    cursor: {
+      // Plain drag pans the time axis (see addPan). uPlot's own drag draws a zoom
+      // selection instead, so gate it to Shift+drag via the mousedown bind below.
+      drag: { x: true, y: false },
+      bind: { mousedown: (u, targ, handler) => (e) => { if (e.shiftKey) handler(e); } },
+    },
     scales: { x: { time: true } },
     hooks: { draw: [(u) => drawMarkers(u, markers)] },
   };
 
   chart = new uPlot(opts, data, container);
   addWheelZoom(chart, xs);
+  addPan(chart, xs);
   if (onMarkerClick) addMarkerClicks(chart, markers, onMarkerClick);
   return chart;
 }
@@ -93,6 +99,7 @@ function addMarkerClicks(u, markers, onMarkerClick) {
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     if (py > 18) return; // only the marker band at the very top is clickable
+    if (u._panned) return; // this "click" was the end of a drag-pan, not a real click
     let best = null, bestD = 6;
     for (const m of markers) {
       const d = Math.abs(u.valToPos(m.t, 'x') - px);
@@ -100,6 +107,47 @@ function addMarkerClicks(u, markers, onMarkerClick) {
     }
     if (best) onMarkerClick(best.ref);
   });
+}
+
+// Drag left/right to pan the time axis. Shift+drag is left to uPlot as a zoom selection
+// (see the cursor bind), so we ignore it here. Pointer capture keeps the pan tracking even
+// when the cursor leaves the plot, and — being bound to u.over — is torn down with the chart
+// (no leaked window listeners across re-renders). Panning is clamped to the data extent so
+// you can't drag off into empty space and lose the series.
+function addPan(u, xs) {
+  const full = { min: xs[0], max: xs[xs.length - 1] };
+  let panning = false, startPx = 0, startMin = 0, startMax = 0;
+
+  u.over.style.cursor = 'grab';
+  u.over.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.shiftKey) return;
+    panning = true;
+    u._panned = false;
+    startPx = e.clientX;
+    startMin = u.scales.x.min;
+    startMax = u.scales.x.max;
+    u.over.setPointerCapture(e.pointerId);
+    u.over.style.cursor = 'grabbing';
+  });
+  u.over.addEventListener('pointermove', (e) => {
+    if (!panning) return;
+    const dxPx = e.clientX - startPx;
+    if (Math.abs(dxPx) > 3) u._panned = true;
+    const width = startMax - startMin;
+    const dv = dxPx * (width / u.over.clientWidth);
+    let min = startMin - dv, max = startMax - dv;
+    if (min < full.min) { min = full.min; max = min + width; }
+    if (max > full.max) { max = full.max; min = max - width; }
+    u.setScale('x', { min, max });
+  });
+  const end = (e) => {
+    if (!panning) return;
+    panning = false;
+    if (u.over.hasPointerCapture(e.pointerId)) u.over.releasePointerCapture(e.pointerId);
+    u.over.style.cursor = 'grab';
+  };
+  u.over.addEventListener('pointerup', end);
+  u.over.addEventListener('pointercancel', end);
 }
 
 function addWheelZoom(u, xs) {

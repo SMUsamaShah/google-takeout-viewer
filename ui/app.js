@@ -210,7 +210,7 @@ function redrawChart() {
     .map((m) => seriesCache.get(m.best.name)).filter(Boolean);
   renderChart(el('chart'), chosen, buildMarkers(), openMarker);
   setContext(chosen.length ? chosen.map((s) => s.label).join('  +  ') : 'No metric selected');
-  setStatus(chosen.length ? 'hover for values · click a top tick to open an activity/ECG · scroll to zoom' : 'Tick a metric on the left.');
+  setStatus(chosen.length ? 'drag to pan · scroll to zoom · shift-drag to select a range · double-click to reset · click a top tick to open an activity/ECG' : 'Tick a metric on the left.');
 }
 
 // Event markers on the timeline (top ticks): activities and ECG readings, filterable.

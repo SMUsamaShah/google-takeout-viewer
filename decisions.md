@@ -2,6 +2,17 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 27. Drag pans; Shift+drag zoom-selects
+Drag used to draw uPlot's zoom-to-selection box, which left no way to move sideways — you had to
+zoom out, re-center, and zoom back in to scroll the timeline. Now a plain left-drag pans the time
+axis (translate min/max by the pixel delta, width preserved, clamped to the data extent so you
+can't drag into empty space), and the old box-zoom is kept on **Shift+drag**, gated via uPlot's
+`cursor.bind.mousedown`. Pan is implemented on `u.over` with pointer capture so tracking survives
+the cursor leaving the plot and is torn down with the chart (no window-listener leak across
+re-renders). Wheel-zoom and double-click-reset are unchanged. Rejected: putting pan on a modifier
+and keeping box-zoom as the default drag — dragging-to-scroll is the stronger expectation, and the
+box-zoom is a power-user extra, so the default gesture should be the common one.
+
 ## 26. Gap padding is `null`, not `NaN` — corrects ADR 9
 ADR 9 padded the union timeline with `NaN` and reasoned it was safe because "uPlot's numeric
 ranging ignores NaN (`NaN < min` / `NaN > max` are both false)". That reasoning is wrong. uPlot
