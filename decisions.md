@@ -2,7 +2,7 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
-## 20. Don't parse archive_browser.html, but it is a real manifest (corrected)
+## 25. Don't parse archive_browser.html, but it is a real manifest (corrected)
 A Takeout download ships two zips: the data, and a small one holding only
 `Takeout/archive_browser.html`. **Correction to an earlier wrong finding:** that page *does*
 contain a complete manifest — every filename (8,767 nodes here) grouped by folder — plus
@@ -17,13 +17,13 @@ the manifest has names only (no per-file sizes/dates, no data-level info, no wor
 is strictly redundant as a data source. The one idea worth taking from it — a per-product/per-type
 **overview** (counts + sizes) — is computed from our own scan, not by parsing Google's HTML.
 
-## 25. Event markers on the timeline (activities, ECG)
+## 24. Event markers on the timeline (activities, ECG)
 To move toward the aggregate-timeline goal, activities and ECG readings render as clickable ticks
 at the top of the chart, on the same time axis as the metrics. Times come from filenames (no file
 read); clicking a tick opens the existing map/ECG detail view. Kept as a thin draw-hook + click
 hit-test rather than a separate lane widget — smallest step that puts "all data on one timeline".
 
-## 24. spanGaps: true — overlaying metrics must add data, not remove it
+## 23. spanGaps: true — overlaying metrics must add data, not remove it
 The union timeline (ADR 9) pads each series with NaN at the other series' timestamps. With
 `spanGaps: false`, uPlot broke the line at every NaN, so adding speed shattered heart rate into
 5,221 fragments (measured) — the user saw *less* data with more boxes checked. Set `spanGaps: true`
