@@ -208,16 +208,33 @@ function redrawChart() {
   const chosen = metricEntries
     .filter((m) => { const cb = el('cb_' + m.typeKey); return cb && cb.checked; })
     .map((m) => seriesCache.get(m.best.name)).filter(Boolean);
-  renderChart(el('chart'), chosen);
+  renderChart(el('chart'), chosen, buildMarkers(), openMarker);
   setContext(chosen.length ? chosen.map((s) => s.label).join('  +  ') : 'No metric selected');
-  setStatus(chosen.length ? 'scroll to zoom · drag to select · double-click to reset' : 'Tick a metric on the left.');
+  setStatus(chosen.length ? 'hover for values · click a top tick to open an activity/ECG · scroll to zoom' : 'Tick a metric on the left.');
 }
+
+// Event markers on the timeline (top ticks): activities and ECG readings, filterable.
+function buildMarkers() {
+  const out = [];
+  if (el('showAct').checked)
+    for (const f of actEntries) if (!Number.isNaN(f.tMs)) out.push({ t: f.tMs / 1000, kind: 'activity', ref: { kind: 'activity', f } });
+  if (el('showEcg').checked)
+    for (const f of ecgEntries) if (f.timeMs) out.push({ t: f.timeMs / 1000, kind: 'ecg', ref: { kind: 'ecg', f } });
+  return out;
+}
+function openMarker(ref) {
+  if (ref.kind === 'activity') openActivity(ref.f);
+  else openReading(ref.f);
+}
+el('showAct').addEventListener('change', redrawChart);
+el('showEcg').addEventListener('change', redrawChart);
 
 // ---- view switching (follows selection; no tabs) -----------------------------
 function showView(view) {
   el('chart').classList.toggle('hidden', view !== 'chart');
   el('map').classList.toggle('hidden', view !== 'map');
   el('ecg').classList.toggle('hidden', view !== 'ecg');
+  el('chartctl').classList.toggle('hidden', view !== 'chart');
   el('mapctl').classList.toggle('hidden', view !== 'map' || !currentTrack);
   el('ecgmeta').classList.toggle('hidden', view !== 'ecg' || !currentReading);
   if (view === 'chart') resizeChart(el('chart'));
@@ -266,7 +283,15 @@ function fromActivityName(name) {
   const date = (name.match(/^(\d{4}-\d{2}-\d{2})/) || [, '?'])[1];
   const sport = (name.match(/_([A-Za-z]+)\.tcx$/) || [, 'Activity'])[1];
   const iso = (name.match(/_PT([0-9HMS.]+)_/) || [, ''])[1];
-  return { date, sport, dur: prettyDuration(iso) };
+  return { date, sport, dur: prettyDuration(iso), tMs: activityTimeMs(name) };
+}
+// Full start time from the filename (underscores in the time/tz are ":"), for timeline markers.
+function activityTimeMs(name) {
+  const pre = name.split('_PT')[0];
+  const ms = Date.parse(pre.replace(/_/g, ':'));
+  if (!Number.isNaN(ms)) return ms;
+  const d = name.match(/^(\d{4}-\d{2}-\d{2})/);
+  return d ? Date.parse(d[1]) : NaN;
 }
 function prettyDuration(iso) {
   if (!iso) return '';

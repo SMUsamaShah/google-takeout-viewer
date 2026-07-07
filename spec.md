@@ -82,14 +82,23 @@ strip, click an activity → map.
 5. Clicking an activity parses that TCX and, if it has GPS, shows it on the map.
 6. Clicking an ECG reading parses that CSV and shows its waveform.
 
-## Chart
+## Timeline (chart)
 
-uPlot (CDN global). One line per series; series grouped onto y-axes by unit (first two units get
-left/right axes). Wheel zooms toward cursor, drag selects, double-click resets. Different series
-sample times are unified via a union timeline with `NaN` gaps (`core/align.js`) — no resampling.
-The default view shows a single metric (heart rate); overlaying metrics with different units and
-time spans is opt-in, since it is only legible once zoomed in. Each metric charts from its largest
-(most complete / merged) file; per-device drill-down is a possible later addition.
+uPlot (CDN global) on one shared time axis — the first cut of the aggregate timeline. One line per
+selected metric; metrics group onto y-axes by unit (first two units get left/right axes). Wheel
+zooms toward cursor, drag selects, double-click resets; hovering shows every metric's value at that
+instant (uPlot legend). Each metric charts from its largest (most complete / merged) file.
+
+Different series' sample times are unified via a union timeline (`core/align.js`) that pads each
+series with `NaN` at the other series' timestamps. Series use **`spanGaps: true`** so these padding
+NaNs are bridged; with `spanGaps: false` a second metric shattered the first into thousands of
+fragments (the "more boxes, less data" bug). A genuine long gap is then also bridged by a straight
+segment — a lesser, separate issue.
+
+**Event markers.** Activities and ECG readings appear as short ticks at the top of the timeline
+(blue = activity, red = ECG), positioned by time parsed from their filenames. Clicking a tick opens
+that activity's map or that reading's ECG. Two toolbar toggles filter the marker types; the metric
+checkboxes filter the lines.
 
 ## Map
 

@@ -10,6 +10,13 @@ is the "why" and the target, and should be kept in sync as goals evolve.
 - **Modular and extensible**: I'll export more data types over time. Adding support for a new
   type should mean dropping in one small parser, not reworking the app.
 
+## The ideal UI: an aggregate timeline
+
+The direction I want is a single **aggregate timeline** of all my data on one linear time axis
+(in the spirit of Timelinize). I see everything positioned in time; I click a moment/activity and
+see all the data collected then — heart rate, steps, GPS — combined; and I can filter to show only
+specific data or activity types. Overlaying more data should show **more**, not less.
+
 ## What I want to see
 
 - **Metrics over time** (chart): heart rate, walking pace/speed, and other scalar metrics.
