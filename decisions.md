@@ -2,6 +2,29 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 26. Gap padding is `null`, not `NaN` — corrects ADR 9
+ADR 9 padded the union timeline with `NaN` and reasoned it was safe because "uPlot's numeric
+ranging ignores NaN (`NaN < min` / `NaN > max` are both false)". That reasoning is wrong. uPlot
+ranges a y-scale by **seeding** its running min/max with the first in-view sample, then folding in
+the rest with `min > v ? min = v : v > max && (max = v)`. When that first sample is `NaN`, the
+seed is `NaN`, and every later comparison (`NaN > v` and `v > NaN`) is false, so nothing updates —
+the scale gets **no range** and the whole series *and its axis* disappear.
+
+This produced two user-visible bugs, both from the same cause:
+- **Overlay:** selecting heart rate (data from 2021) + steps (from 2015) put the union's left edge
+  in 2015, so heart rate's first column value was padding — heart rate never ranged and only steps
+  drew.
+- **Zoom:** whether a scale's first *visible* sample was real or padding flipped as you zoomed, so
+  lines blinked out and back.
+
+Fix: pad with `null`, uPlot's actual "missing" sentinel, which its scan skips (so the seed is the
+first real value). `null` can't live in a `Float64Array`, so the aligned overlay **columns** are
+now plain `Array`s; the raw per-series arrays stay `Float64Array`. Verified against the real 201k-pt
+heart-rate and 240k-pt steps files: both overlay and a full zoom sweep now range every scale that
+has data in view. Rejected: keeping `NaN` and adding a custom per-scale `range` callback that
+re-scans the data ourselves — more code, and it reimplements the auto-ranging that `null` restores
+for free.
+
 ## 25. Don't parse archive_browser.html, but it is a real manifest (corrected)
 A Takeout download ships two zips: the data, and a small one holding only
 `Takeout/archive_browser.html`. **Correction to an earlier wrong finding:** that page *does*
