@@ -21,6 +21,14 @@ is the "why" and the target, and should be kept in sync as goals evolve.
 - **ECG readings**: view the single-lead ECG waveform from a reading, with its classification
   and heart rate.
 
+## How the UI should feel
+
+- Organised around **what I want to view**, not around file formats. I think in metrics
+  ("heart rate", "steps"), not in individual device files.
+- One row per metric, with readable names — not a wall of identical `derived · N MB` rows.
+- Don't make me pick a "mode" for everything: selecting a metric / activity / ECG reading should
+  just show the right view.
+
 ## How I want it built
 
 - Simple over clever. More code = more technical debt.

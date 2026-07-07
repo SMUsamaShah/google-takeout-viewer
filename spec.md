@@ -57,15 +57,28 @@ Full resolution, no stored aggregation — zooming reveals raw samples.
 { id, timeMs, classification, heartRate, device, sampleRate, samples: Float64Array }
 ```
 
+## UI model
+
+The app is organised around *what you want to look at*, not file formats. There are **no view
+tabs**: the main area follows your selection, and a heading names what you are looking at.
+
+The sidebar has three sections:
+- **Metrics** — one row per metric type (not one per file). A metric may come from several device
+  files; they collapse to a single entry backed by the largest (most complete) file. Tick to show
+  on the chart (multiple can overlay).
+- **ECG** — one row per reading (newest first). Click to view its waveform.
+- **Activities** — one row per TCX activity (newest first). Click to view its GPS track on the map.
+
+Selecting from a section switches the view: tick a metric → chart, click an ECG reading → ECG
+strip, click an activity → map.
+
 ## Flow
 
 1. Pick the extracted Takeout folder (`<input webkitdirectory>`). Nothing is read yet.
-2. Sidebar lists Fit data files (chart, grouped by type), TCX activities (map, newest first) and
-   ECG readings (newest first). Activity and ECG list labels come from the filename; the file is
-   read only on click.
-3. Heart rate and speed both parse on load (largest file per type = merged superset). Only heart
-   rate is auto-shown on the chart; speed stays parsed as a map colour source and is one tick away.
-4. Ticking a data file parses it once (cached) and adds it to the chart.
+2. The sidebar populates. Metric rows are derived from filenames (collapsed per type); activity and
+   ECG rows are labelled from their filenames. Files are read only when selected.
+3. Heart rate shows on the chart by default; speed also parses quietly so the map can colour by it.
+4. Ticking a metric parses its file once (cached) and adds/overlays it on the chart.
 5. Clicking an activity parses that TCX and, if it has GPS, shows it on the map.
 6. Clicking an ECG reading parses that CSV and shows its waveform.
 
@@ -75,7 +88,8 @@ uPlot (CDN global). One line per series; series grouped onto y-axes by unit (fir
 left/right axes). Wheel zooms toward cursor, drag selects, double-click resets. Different series
 sample times are unified via a union timeline with `NaN` gaps (`core/align.js`) — no resampling.
 The default view shows a single metric (heart rate); overlaying metrics with different units and
-time spans is opt-in, since it is only legible once zoomed in.
+time spans is opt-in, since it is only legible once zoomed in. Each metric charts from its largest
+(most complete / merged) file; per-device drill-down is a possible later addition.
 
 ## Map
 

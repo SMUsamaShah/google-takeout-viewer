@@ -17,6 +17,25 @@ the manifest has names only (no per-file sizes/dates, no data-level info, no wor
 is strictly redundant as a data source. The one idea worth taking from it — a per-product/per-type
 **overview** (counts + sizes) — is computed from our own scan, not by parsing Google's HTML.
 
+## 22. Type key by known-prefix match, not underscore split
+A data type (e.g. `step_count.cumulative`) and the source that follows it both contain
+underscores, so the type/source boundary is ambiguous from the filename. Splitting on `_` mislabels
+files whose source is a device name (`..._motorola_`) rather than `com...`. So the type is found by
+matching known data-type prefixes, with a first-token fallback for unknown types.
+
+## 21. No view tabs — the view follows selection
+Chart/Map/ECG tabs were always shown even when irrelevant, presenting three modes for everything.
+Removed them: ticking a metric shows the chart, clicking an activity shows the map, clicking an ECG
+reading shows the strip; a heading names the current view. Less chrome, and navigation matches how
+the data is actually chosen.
+
+## 20. Sidebar lists one row per metric, not per file
+The per-file list was unreadable at scale: every row showed only `derived · N MB`, and near-empty
+per-session files (e.g. ~30 activity-samples) buried the Activities and ECG sections. Files now
+collapse to one entry per metric type (backed by the largest file), with readable names. Rejected:
+reading every file up front to group by its true `dataTypeName` — too costly; filename-based
+grouping with a known-type list is enough.
+
 ## 19. Chart defaults to a single metric (heart rate)
 Auto-showing heart rate *and* speed produced an unreadable first view: two different-unit scales
 overlaid across ~11 years (speed data starts 2015, heart rate 2021), with speed's GPS glitches

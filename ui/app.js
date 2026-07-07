@@ -1,7 +1,11 @@
-// Orchestration. Two views share one folder load:
-//  - Data (chart): Fit "All Data" JSON series (heart rate, speed, ...), overlaid on time.
-//  - Activities (map): TCX GPS tracks, drawn on OpenStreetMap and coloured by a chosen series.
-// Heart rate + speed auto-load so both the default chart and map colouring work immediately.
+// Orchestration. One folder load feeds a sidebar organised by what you want to look at,
+// not by file format. The main area follows your selection — there are no view tabs:
+//   tick a metric  -> chart (overlay-able, zoomable)
+//   click activity -> map of that GPS track, coloured by a chosen metric
+//   click ECG      -> that reading's waveform
+//
+// The sidebar lists ONE row per metric (not one per file): several device/source files of the
+// same type collapse to a single entry backed by the largest (most complete) file.
 
 import { findParser } from '../core/registry.js';
 import { filesFromInput } from './loader.js';
@@ -14,124 +18,126 @@ import { tcxParser } from '../parsers/tcx.js';                      // registers
 import { ecgParser } from '../parsers/ecg.js';                      // registers
 
 const el = (id) => document.getElementById(id);
-const seriesCache = new Map(); // data-file name -> Series
-let dataEntries = [];          // parseable Fit "All Data" files
-let actEntries = [];           // TCX activity files
-let ecgEntries = [];           // ECG reading files
-let currentTrack = null;       // parsed track shown on the map
-let currentReading = null;     // parsed ECG reading shown on the ECG view
+const seriesCache = new Map();  // file name -> parsed Series
+let metricEntries = [];         // one per metric type: { typeKey, label, best }
+let actEntries = [];            // TCX activities
+let ecgEntries = [];            // ECG readings
+let currentTrack = null;
+let currentReading = null;
 
 // ---- folder load -------------------------------------------------------------
 el('folder').addEventListener('change', async (e) => {
   const all = filesFromInput(e.target.files);
 
-  dataEntries = all
-    .filter((f) => /^(raw|derived)_com\.google\..+\.json$/i.test(f.name))
-    .map((f) => ({ ...f, typeKey: typeKeyOf(f.name), kind: f.name.startsWith('raw') ? 'raw' : 'derived' }))
-    .sort((a, b) => a.typeKey.localeCompare(b.typeKey) || b.size - a.size);
+  // Collapse Fit "All Data" files to one entry per metric type (best = largest file).
+  const byType = new Map();
+  for (const f of all) {
+    if (!/^(raw|derived)_com\.google\..+\.json$/i.test(f.name)) continue;
+    const key = typeKeyOf(f.name);
+    const cur = byType.get(key);
+    if (!cur || f.size > cur.size) byType.set(key, f);
+  }
+  metricEntries = [...byType.entries()]
+    .map(([typeKey, best]) => ({ typeKey, best, label: metricLabel(typeKey) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   actEntries = all
     .filter((f) => /\.tcx$/i.test(f.name))
     .map((f) => ({ ...f, ...fromActivityName(f.name) }))
-    .sort((a, b) => b.date.localeCompare(a.date)); // newest first
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   ecgEntries = all
     .filter((f) => ecgParser.match(f.name))
     .map((f) => ({ ...f, timeMs: +(f.name.match(/(\d+)\.csv$/) || [, 0])[1] }))
     .sort((a, b) => b.timeMs - a.timeMs);
 
-  buildDataList();
+  buildMetricList();
   buildActivityList();
   buildEcgList();
 
-  // Parse heart rate + speed so both are ready (speed is a map colour source), but only
-  // auto-show heart rate on the chart: overlaying two different-unit metrics across ~11 years
-  // is an unreadable default. Speed is one tick away in the list.
-  const defaults = [];
-  for (const key of ['heart_rate.bpm', 'speed']) {
-    const best = dataEntries.filter((x) => x.typeKey === key).sort((a, b) => b.size - a.size)[0];
-    if (best) defaults.push(best);
-  }
-  await Promise.all(defaults.map(ensureParsed));
-  const hr = defaults.find((d) => d.typeKey === 'heart_rate.bpm');
-  if (hr) { const cb = el('cb_' + hr.name); if (cb) cb.checked = true; }
+  // Default: show heart rate on the chart. Also parse speed quietly so the map can colour by it.
+  const hr = metricEntries.find((m) => m.typeKey === 'heart_rate.bpm');
+  const sp = metricEntries.find((m) => m.typeKey === 'speed');
+  if (hr) { await ensureParsed(hr.best); const cb = el('cb_' + hr.typeKey); if (cb) cb.checked = true; }
+  if (sp) await ensureParsed(sp.best);
   refreshColorByOptions();
+  showView('chart');
   redrawChart();
 });
 
-// ---- data (chart) list -------------------------------------------------------
-function buildDataList() {
+// ---- sidebar: metrics --------------------------------------------------------
+function buildMetricList() {
   const list = el('list');
   list.innerHTML = '';
-  let lastType = null;
-  for (const f of dataEntries) {
-    if (f.typeKey !== lastType) {
-      const h = document.createElement('div');
-      h.className = 'group';
-      h.textContent = f.typeKey.replace(/[._]/g, ' ');
-      list.appendChild(h);
-      lastType = f.typeKey;
-    }
+  for (const m of metricEntries) {
     const row = document.createElement('label');
     row.className = 'row';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.id = 'cb_' + f.name;
+    cb.id = 'cb_' + m.typeKey;
     cb.addEventListener('change', async () => {
-      if (cb.checked) { cb.disabled = true; await ensureParsed(f); cb.disabled = false; }
+      showView('chart');
+      if (cb.checked) { cb.disabled = true; await ensureParsed(m.best); cb.disabled = false; }
       refreshColorByOptions();
       redrawChart();
     });
-    const meta = document.createElement('span');
-    meta.className = 'meta';
-    meta.textContent = `${f.kind} · ${(f.size / 1e6).toFixed(1)} MB`;
-    row.append(cb, meta);
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = m.label;
+    row.append(cb, name);
     list.appendChild(row);
   }
 }
 
-// ---- activities (map) list ---------------------------------------------------
+// ---- sidebar: activities -----------------------------------------------------
 function buildActivityList() {
   const box = el('activities');
   box.innerHTML = '';
   for (const f of actEntries) {
     const row = document.createElement('div');
-    row.className = 'act';
-    row.innerHTML = `<span>${f.date}</span><span class="sport">${f.sport} · ${f.dur}</span>`;
-    row.addEventListener('click', () => openActivity(f));
+    row.className = 'item';
+    row.innerHTML = `<span>${f.date}</span><span class="sub">${f.sport} · ${f.dur}</span>`;
+    row.addEventListener('click', () => { markSelected(box, row); openActivity(f); });
     box.appendChild(row);
   }
 }
 
 async function openActivity(f) {
   showView('map');
-  setStatus(`Loading ${f.date} ${f.sport} …`);
+  setContext(`${f.date} · ${f.sport}`);
+  setStatus('Loading activity …');
   await new Promise((r) => setTimeout(r));
   const text = await f.getText();
   const { track } = tcxParser.parseActivity(text, f.name);
-  if (!track) { currentTrack = null; setStatus(`${f.date} ${f.sport}: no GPS data in this activity`); el('mapctl').classList.add('hidden'); return; }
+  if (!track) {
+    currentTrack = null;
+    el('mapctl').classList.add('hidden');
+    setStatus('This activity has no GPS data.');
+    return;
+  }
   currentTrack = track;
   el('mapctl').classList.remove('hidden');
   drawMap();
 }
 
-// ---- ECG list ----------------------------------------------------------------
+// ---- sidebar: ECG ------------------------------------------------------------
 function buildEcgList() {
   const box = el('ecgreadings');
   box.innerHTML = '';
   for (const f of ecgEntries) {
     const row = document.createElement('div');
-    row.className = 'act';
+    row.className = 'item';
     const d = new Date(f.timeMs);
     const when = isNaN(d) ? f.name : d.toISOString().slice(0, 16).replace('T', ' ');
-    row.innerHTML = `<span>${when}</span><span class="sport">ECG</span>`;
-    row.addEventListener('click', () => openReading(f));
+    row.innerHTML = `<span>${when}</span><span class="sub">ECG</span>`;
+    row.addEventListener('click', () => { markSelected(box, row); openReading(f); });
     box.appendChild(row);
   }
 }
 
 async function openReading(f) {
   showView('ecg');
+  setContext('ECG');
   setStatus('Loading ECG …');
   await new Promise((r) => setTimeout(r));
   const text = await f.getText();
@@ -144,18 +150,17 @@ function drawECG() {
   renderECG(el('ecg'), currentReading);
   const r = currentReading;
   const when = new Date(r.timeMs);
+  setContext(`ECG · ${isNaN(when) ? '' : when.toISOString().slice(0, 16).replace('T', ' ')}`);
   el('ecgmeta').classList.remove('hidden');
   el('ecgmeta').textContent =
-    `${isNaN(when) ? '' : when.toISOString().slice(0, 16).replace('T', ' ')} · ${r.classification}` +
-    `${r.heartRate ? ' · ' + r.heartRate + ' bpm' : ''}${r.device ? ' · ' + r.device : ''} · ` +
-    `${(r.samples.length / r.sampleRate).toFixed(0)}s @ ${r.sampleRate}Hz`;
-  setStatus('scroll to zoom, drag to select, double-click to reset');
+    `${r.classification}${r.heartRate ? ' · ' + r.heartRate + ' bpm' : ''}` +
+    `${r.device ? ' · ' + r.device : ''} · ${(r.samples.length / r.sampleRate).toFixed(0)}s @ ${r.sampleRate}Hz`;
+  setStatus('scroll to zoom · drag to select · double-click to reset');
 }
 
-// ---- colour-by control -------------------------------------------------------
+// ---- map colour-by -----------------------------------------------------------
 function scalarSeries() {
-  // parsed data-file series usable as a colour source
-  return dataEntries.filter((f) => seriesCache.get(f.name)).map((f) => seriesCache.get(f.name));
+  return metricEntries.map((m) => seriesCache.get(m.best.name)).filter(Boolean);
 }
 
 function refreshColorByOptions() {
@@ -164,7 +169,8 @@ function refreshColorByOptions() {
   sel.innerHTML = '';
   const seen = new Set();
   for (const s of scalarSeries()) {
-    if (seen.has(s.label)) continue; seen.add(s.label);
+    if (seen.has(s.label)) continue;
+    seen.add(s.label);
     const o = document.createElement('option');
     o.value = s.id; o.textContent = s.label;
     sel.appendChild(o);
@@ -178,41 +184,37 @@ function drawMap() {
   const src = scalarSeries().find((s) => s.id === el('colorby').value) || scalarSeries()[0];
   let legend = 'no colour data';
   if (src) {
-    const values = joinValues(currentTrack.t, src, 120);
-    const r = renderMap(el('map'), currentTrack, values);
+    const r = renderMap(el('map'), currentTrack, joinValues(currentTrack.t, src, 120));
     legend = r.colored ? `${src.label}: ${Math.round(r.min)}–${Math.round(r.max)} ${src.unit}` : `no ${src.label} near this activity`;
   } else {
     renderMap(el('map'), currentTrack, new Float64Array(currentTrack.t.length).fill(NaN));
   }
   el('legend').textContent = '· ' + legend;
-  setStatus(`${currentTrack.sport} · ${currentTrack.lat.length} GPS points`);
+  setStatus(`${currentTrack.lat.length} GPS points`);
 }
 
-// ---- parsing -----------------------------------------------------------------
+// ---- parsing + chart ---------------------------------------------------------
 async function ensureParsed(f) {
   if (seriesCache.has(f.name)) return seriesCache.get(f.name);
-  setStatus(`Parsing ${f.name} …`);
+  setStatus('Loading …');
   await new Promise((r) => setTimeout(r));
-  const text = await f.getText();
-  const out = findParser(f.name).parse(text, f.name);
-  const s = out[0] || null;
-  seriesCache.set(f.name, s);
+  const out = findParser(f.name).parse(await f.getText(), f.name);
+  seriesCache.set(f.name, out[0] || null);
   setStatus('');
-  return s;
+  return seriesCache.get(f.name);
 }
 
 function redrawChart() {
-  const chosen = dataEntries
-    .filter((f) => { const cb = el('cb_' + f.name); return cb && cb.checked; })
-    .map((f) => seriesCache.get(f.name)).filter(Boolean);
+  const chosen = metricEntries
+    .filter((m) => { const cb = el('cb_' + m.typeKey); return cb && cb.checked; })
+    .map((m) => seriesCache.get(m.best.name)).filter(Boolean);
   renderChart(el('chart'), chosen);
-  setStatus(chosen.length ? `${chosen.length} series · scroll to zoom, drag to select, double-click to reset` : 'No series selected');
+  setContext(chosen.length ? chosen.map((s) => s.label).join('  +  ') : 'No metric selected');
+  setStatus(chosen.length ? 'scroll to zoom · drag to select · double-click to reset' : 'Tick a metric on the left.');
 }
 
-// ---- view switching ----------------------------------------------------------
-document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showView(t.dataset.view)));
+// ---- view switching (follows selection; no tabs) -----------------------------
 function showView(view) {
-  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   el('chart').classList.toggle('hidden', view !== 'chart');
   el('map').classList.toggle('hidden', view !== 'map');
   el('ecg').classList.toggle('hidden', view !== 'ecg');
@@ -224,21 +226,60 @@ function showView(view) {
 }
 
 // ---- helpers -----------------------------------------------------------------
-function typeKeyOf(name) { const m = name.match(/com\.google\.([a-z_.]+?)_com/i); return m ? m[1] : name; }
+const METRIC_LABELS = {
+  'heart_rate.bpm': 'Heart rate', 'speed': 'Speed', 'step_count.delta': 'Steps',
+  'step_count.cumulative': 'Steps (cumulative)', 'step_count.cadence': 'Step cadence',
+  'distance.delta': 'Distance', 'calories.expended': 'Calories', 'calories.bmr': 'Calories (BMR)',
+  'active_minutes': 'Active minutes', 'heart_minutes': 'Heart points', 'weight': 'Weight', 'height': 'Height',
+  'respiratory_rate': 'Respiratory rate', 'nutrition': 'Nutrition', 'hydration': 'Hydration',
+  'activity.segment': 'Activity segments', 'activity.samples': 'Activity samples',
+  'location.sample': 'Location samples', 'sleep.segment': 'Sleep', 'body.temperature': 'Body temperature',
+  'oxygen_saturation': 'Oxygen saturation', 'sensor.events': 'Sensor events',
+  'internal.goal': 'Goals', 'internal.paced_walking_attr': 'Paced walking',
+  'internal.sleep_attributes': 'Sleep attributes', 'internal.sleep_schedule': 'Sleep schedule',
+};
+function metricLabel(key) {
+  return METRIC_LABELS[key] || key.replace(/[._]/g, ' ').replace(/^./, (c) => c.toUpperCase());
+}
+
+// A data type contains underscores (e.g. step_count.cumulative) and so does the source that
+// follows it, so the type/source boundary can't be found by splitting on "_". Match the known
+// data-type prefixes instead; unknown types fall back to their first token.
+const KNOWN_TYPES = [
+  'heart_rate.bpm', 'step_count.delta', 'step_count.cumulative', 'step_count.cadence',
+  'distance.delta', 'speed', 'calories.expended', 'calories.bmr', 'activity.segment', 'activity.samples',
+  'active_minutes', 'heart_minutes', 'weight', 'height', 'respiratory_rate', 'nutrition', 'hydration',
+  'location.sample', 'sleep.segment', 'body.temperature', 'oxygen_saturation', 'blood_pressure',
+  'internal.goal', 'internal.paced_walking_attr', 'internal.sleep_attributes', 'internal.sleep_schedule',
+  'sensor.events',
+];
+function typeKeyOf(name) {
+  const after = name.replace(/^(raw|derived)_com\.google\./i, '');
+  for (const t of KNOWN_TYPES) {
+    if (after.startsWith(t + '_') || after === t + '.json') return t;
+  }
+  const m = after.match(/^([a-z]+(?:_[a-z]+)*)/); // fallback: first token
+  return m ? m[1] : name;
+}
 
 function fromActivityName(name) {
-  // e.g. 2022-07-02T10_58_00+01_00_PT6M_Walking.tcx
-  const date = (name.match(/^(\d{4}-\d{2}-\d{2})/) || [,'?'])[1];
-  const sport = (name.match(/_([A-Za-z]+)\.tcx$/) || [,'Activity'])[1];
-  const iso = (name.match(/_PT([0-9HMS.]+)_/) || [,''])[1];
+  const date = (name.match(/^(\d{4}-\d{2}-\d{2})/) || [, '?'])[1];
+  const sport = (name.match(/_([A-Za-z]+)\.tcx$/) || [, 'Activity'])[1];
+  const iso = (name.match(/_PT([0-9HMS.]+)_/) || [, ''])[1];
   return { date, sport, dur: prettyDuration(iso) };
 }
 function prettyDuration(iso) {
   if (!iso) return '';
-  const h = (iso.match(/(\d+)H/) || [,0])[1];
-  const m = (iso.match(/(\d+)M/) || [,0])[1];
+  const h = (iso.match(/(\d+)H/) || [, 0])[1];
+  const m = (iso.match(/(\d+)M/) || [, 0])[1];
   return (h > 0 ? h + 'h' : '') + (m > 0 || h > 0 ? m + 'm' : Math.round(parseFloat(iso)) + 's');
 }
 
+function markSelected(box, row) {
+  box.querySelectorAll('.item.on').forEach((r) => r.classList.remove('on'));
+  row.classList.add('on');
+}
+function setContext(msg) { el('context').textContent = msg; }
 function setStatus(msg) { el('status').textContent = msg; }
+
 window.addEventListener('resize', () => resizeChart(el('chart')));
