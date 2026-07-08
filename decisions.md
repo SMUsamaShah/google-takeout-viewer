@@ -2,6 +2,74 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 29. Heart-first defaults: curated metrics, recent-cluster first view, markers off
+Three changes so the first thing a heart-focused user sees is useful, not confusing.
+(1) The metric sidebar listed one row per file *type*, including internal/bookkeeping,
+sensor, location and activity-segment streams that have no scalar to plot — ticking them drew
+nothing. We hide those (`^(internal|sensor|location|activity|nutrition|hydration)`) and, when a
+ticked metric parses to no data, say so in the status bar instead of showing a blank chart.
+(2) The chart opened on the full multi-year span, which for bursty data is mostly empty gaps
+with a raw-line smear. It now opens on the most recent continuous heart-rate cluster (walk back
+from the last sample to the previous >2-day gap) — real, non-aggregated samples you can read;
+zoom out for the long-term band. (3) The activity/ECG top-ticks are noise for this use and now
+default off (still toggleable). Rejected: a fixed recent window (e.g. last 90 days) — the data is
+clustered, so a fixed window often lands on emptiness; the cluster walk-back adapts to density.
+
+## 28. Daily heart-rate band as the long-term overview
+The raw stream answers "what was my heart rate at 3pm"; it does not answer "how is my resting
+heart rate trending vs six months ago" — 400k clustered points don't read as a trend, and the
+phone app only exposes 5-minute aggregates anyway. `Fit/Daily activity metrics/Daily activity
+metrics.csv` already carries per-day min/avg/max heart rate for the whole history in one small
+file, so fit-daily.js turns it into a single **band series**: a min→max shaded envelope with the
+daily average as its centre line (daily min doubles as a resting-HR proxy). chart.js renders a
+band series as three uPlot series (min, max invisible + avg line) plus a uPlot `band` fill, on the
+heart-rate scale, under the raw line. It's on by default (toggle in the toolbar) and shares the
+raw samples' zoom, so zoomed out it's the trend and zoomed in it fades behind the real samples.
+
+Gaps are the hard part. On the shared union timeline daily points sit sparsely among the raw
+samples, so the band must bridge those to stay continuous — but must NOT bridge a months-long
+hole into one misleading shape. uPlot's `spanGaps` is all-or-nothing, so: chart.js linearly fills
+min/avg/max between neighbouring days (continuous within data-dense periods) and leaves a null
+wherever days are >14 days apart (a real break), with `spanGaps:false`; and fit-daily.js inserts an
+explicit null "breaker" mid-gap so a break exists even when the two edge days would be adjacent on
+the axis (e.g. band shown alone). ys/lo/hi are plain Arrays so those nulls survive alignment (ADR
+26). Rejected: three separate min/avg/max lines (a filled band reads the range far better);
+resampling the raw stream to daily in-app (the export already did it, losing nothing we need).
+
+## 27. Drag pans; Shift+drag zoom-selects
+Drag used to draw uPlot's zoom-to-selection box, which left no way to move sideways — you had to
+zoom out, re-center, and zoom back in to scroll the timeline. Now a plain left-drag pans the time
+axis (translate min/max by the pixel delta, width preserved, clamped to the data extent so you
+can't drag into empty space), and the old box-zoom is kept on **Shift+drag**, gated via uPlot's
+`cursor.bind.mousedown`. Pan is implemented on `u.over` with pointer capture so tracking survives
+the cursor leaving the plot and is torn down with the chart (no window-listener leak across
+re-renders). Wheel-zoom and double-click-reset are unchanged. Rejected: putting pan on a modifier
+and keeping box-zoom as the default drag — dragging-to-scroll is the stronger expectation, and the
+box-zoom is a power-user extra, so the default gesture should be the common one.
+
+## 26. Gap padding is `null`, not `NaN` — corrects ADR 9
+ADR 9 padded the union timeline with `NaN` and reasoned it was safe because "uPlot's numeric
+ranging ignores NaN (`NaN < min` / `NaN > max` are both false)". That reasoning is wrong. uPlot
+ranges a y-scale by **seeding** its running min/max with the first in-view sample, then folding in
+the rest with `min > v ? min = v : v > max && (max = v)`. When that first sample is `NaN`, the
+seed is `NaN`, and every later comparison (`NaN > v` and `v > NaN`) is false, so nothing updates —
+the scale gets **no range** and the whole series *and its axis* disappear.
+
+This produced two user-visible bugs, both from the same cause:
+- **Overlay:** selecting heart rate (data from 2021) + steps (from 2015) put the union's left edge
+  in 2015, so heart rate's first column value was padding — heart rate never ranged and only steps
+  drew.
+- **Zoom:** whether a scale's first *visible* sample was real or padding flipped as you zoomed, so
+  lines blinked out and back.
+
+Fix: pad with `null`, uPlot's actual "missing" sentinel, which its scan skips (so the seed is the
+first real value). `null` can't live in a `Float64Array`, so the aligned overlay **columns** are
+now plain `Array`s; the raw per-series arrays stay `Float64Array`. Verified against the real 201k-pt
+heart-rate and 240k-pt steps files: both overlay and a full zoom sweep now range every scale that
+has data in view. Rejected: keeping `NaN` and adding a custom per-scale `range` callback that
+re-scans the data ourselves — more code, and it reimplements the auto-ranging that `null` restores
+for free.
+
 ## 25. Don't parse archive_browser.html, but it is a real manifest (corrected)
 A Takeout download ships two zips: the data, and a small one holding only
 `Takeout/archive_browser.html`. **Correction to an earlier wrong finding:** that page *does*
