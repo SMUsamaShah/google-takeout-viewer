@@ -14,18 +14,30 @@ export function renderECG(container, reading) {
   const dt = 1 / reading.sampleRate;
   for (let i = 0; i < n; i++) xs[i] = i * dt;
 
+  const css = getComputedStyle(document.documentElement);
+  const pick = (k, f) => css.getPropertyValue(k).trim() || f;
+  const trace = pick('--critical', '#c1121f');
+  const grid = pick('--grid', '#f0d5d5');
+  const ink = pick('--muted', '#666');
+
   const opts = {
+    // Themed from the page's custom properties (canvas can't read `var(--x)`), so the trace
+    // follows light/dark like the rest of the UI. Red is right *here*: this is a clinical
+    // waveform, the one place the reserved status hue actually means what it says.
     width: container.clientWidth,
     height: Math.max(320, container.clientHeight || 420),
     scales: { x: { time: false } },
     series: [
       { label: 't' },
-      { label: 'ECG (raw)', stroke: '#c1121f', width: 1, points: { show: false } },
+      { label: 'ECG (raw)', stroke: trace, width: 1, points: { show: false } },
     ],
     axes: [
-      { stroke: '#666', grid: { stroke: '#f0d5d5' }, space: 40,
+      { stroke: ink, grid: { stroke: grid }, space: 40, font: '11px system-ui, sans-serif',
         values: (u, ts) => ts.map((t) => t.toFixed(1) + 's') },
-      { stroke: '#666', grid: { stroke: '#f0d5d5' } },
+      // Amplitude runs to ±4000 ADC counts, so the axis needs room for a 6-character
+      // "-2,500" — at uPlot's default width the leading minus is clipped off and negative
+      // values read as positive ones.
+      { stroke: ink, grid: { stroke: grid }, size: 64, font: '11px system-ui, sans-serif' },
     ],
     cursor: { drag: { x: true, y: false } },
   };

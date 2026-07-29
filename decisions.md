@@ -2,6 +2,50 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 32. One lane per metric on a shared time axis — never a dual-axis overlay
+Overlaying metrics with different units forced a second y-axis, and a dual-axis chart is the
+single worst chart mistake there is: the alignment of the two scales is arbitrary, so the
+picture invents a correlation the data doesn't contain. Metrics now each get their own **lane**
+— own y-scale, own colour, own label — stacked on one shared x. Pan/zoom on any lane drives all
+of them and one crosshair tracks the whole stack, so "what was happening at 3pm" is a vertical
+slice rather than a mode you switch into. This also matches the aggregate-timeline goal directly.
+
+It removed a structural bug as a side effect. Previously every selected metric was padded onto
+one union timeline, so heart rate carried a null at each of steps' timestamps (ADR 26's whole
+problem). Each lane now unions only its own series, so no metric is diluted by another's sample
+times — which in turn let the raw lines drop `spanGaps`, so the long straight segments that used
+to be drawn across multi-month holes (the known tradeoff in ADR 23) are simply gone. Rejected:
+indexing both series to a common base on one axis — legitimate for dual-axis in general, but
+meaningless for "bpm vs steps", which aren't comparable quantities.
+
+## 31. Rebuilt the UI around the question, not around the file formats
+The old shell (checkbox list of file types + one chart) presented the export's *structure*; the
+user's actual question is "how is my heart doing — now, through the day, and versus six months
+ago". So: heart rate is the hero lane; a KPI row leads with **resting heart rate** (daily minimum
+as the proxy) and its delta against the equally-long preceding window, because that's the number
+that moves slowly enough for "vs six months ago" to mean anything; a **Resolution** tile reports
+median sample spacing, which is the reason this viewer exists at all (3 s on the Pixel-watch data
+vs the phone app's 5-minute aggregates); an **inspector** reads every metric at the hovered or
+pinned instant plus that day's resting/peak and any activity or ECG around it; activities and ECG
+ride the same axis as a clickable ribbon, and opening one is a sheet over the timeline so you
+never lose your place. Filters (range presets + metric chips) sit in one row scoping everything
+below. A table view is the accessibility twin of the heart-rate lane. Rejected: keeping the old
+chart alongside as a second mode — two ways to see the same thing is what made the old UI vague.
+
+## 30. Validated palette; heart rate is blue and red is reserved
+Series colours come from a categorical palette validated with the dataviz validator in both
+modes (worst adjacent CVD ΔE 9.1 light / 8.4 dark; normal-vision 19.6 / 19.3). Colour is bound to
+the *metric*, not its position, so filtering others out never repaints the survivors. Three
+light-mode slots sit below 3:1 contrast, which the relief rule permits because every lane carries
+a visible direct label and a table view exists.
+
+Heart rate deliberately takes slot 1 (blue), not the red convention. Red is the reserved status
+hue here — ECG readings and flagged events — and painting a user who is monitoring a heart
+condition their own pulse in alarm-red all day is both a palette violation and needlessly
+alarming. The ECG waveform itself stays red: that is the one place the status hue is literally
+what it means. Canvas can't resolve `var(--token)`, so every colour is resolved to a literal
+before it reaches uPlot.
+
 ## 29. Heart-first defaults: curated metrics, recent-cluster first view, markers off
 Three changes so the first thing a heart-focused user sees is useful, not confusing.
 (1) The metric sidebar listed one row per file *type*, including internal/bookkeeping,
