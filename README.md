@@ -4,6 +4,10 @@ A modular, plain HTML/JS viewer for the health data in a [Google Takeout](https:
 
 It exists because the phone app only shows **5-minute aggregates**. The export contains the raw stream — on a Pixel Watch that's a sample every ~3 seconds — and this viewer plots it.
 
+You can choose either the extracted Takeout folder or the original `.zip` directly. ZIP loading is
+local: the browser indexes the archive and decompresses entries on demand, using worker-backed
+ZIP decoding where supported. It does not create an extracted copy on disk.
+
 ## What it shows
 
 An **aggregate timeline**: one lane per metric, stacked on a single shared time axis, with heart rate as the hero.
@@ -19,9 +23,9 @@ An **aggregate timeline**: one lane per metric, stacked on a single shared time 
 
 ## Usage
 
-1. Extract your Takeout `.zip` locally.
-2. Open `index.html` in a browser (Chromium-based recommended).
-3. Click **Choose Takeout folder** and select the extracted folder.
+1. Open `index.html` in a browser (Chromium-based recommended).
+2. Click **Choose Takeout folder** or **Choose Takeout ZIP**.
+3. Select the extracted folder or original Takeout archive.
 
 Heart rate loads by default, opening on the most recent continuous stretch of data. Drag to pan, scroll to zoom, shift-drag to select a range, double-click to reset.
 

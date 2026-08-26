@@ -8,7 +8,7 @@
 // detail sheet over the timeline, not a separate view that loses your place.
 
 import { findParser } from '../core/registry.js';
-import { filesFromInput } from './loader.js';
+import { filesFromInput, filesFromZip, closeArchive } from './loader.js';
 import { renderTimeline, destroyTimeline, timeline, sampleAt, fmtVal } from './timeline.js';
 import { renderStats, renderTable } from './stats.js';
 import { renderMap } from './map.js';
@@ -44,9 +44,25 @@ let pinnedT = null;
 let currentTrack = null, currentReading = null;
 let activityContextRequest = 0;
 
-// ---- folder load ----------------------------------------------------------------
+// ---- Takeout load ---------------------------------------------------------------
 el('folder').addEventListener('change', async (e) => {
-  const all = filesFromInput(e.target.files);
+  await closeArchive();
+  await loadTakeout(filesFromInput(e.target.files));
+});
+
+el('zip').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    setStatus('Indexing ZIP …');
+    const all = await filesFromZip(file);
+    await loadTakeout(all);
+  } catch (err) {
+    setStatus(`Could not read ZIP: ${err.message || 'unknown error'}`);
+  }
+});
+
+async function loadTakeout(all) {
   // A new Takeout must never reuse parsed data from the previous folder. This is
   // particularly important when two exports contain identically named daily files.
   seriesCache.clear();
@@ -58,7 +74,7 @@ el('folder').addEventListener('change', async (e) => {
   activityProbCache.clear();
   activityContextRequest++;
   destroyTimeline();
-  setStatus('Reading folder …');
+  setStatus('Reading Takeout …');
 
   const byType = new Map();
   for (const f of all) {
@@ -146,7 +162,7 @@ el('folder').addEventListener('change', async (e) => {
     timeline()?.setWindow(xs[start], xs[n - 1]);
   }
   syncAfterWindow();
-});
+}
 
 function importSummary(series, detailedFiles, fitFile, activityDays = 0) {
   if (!series?.xs?.length) return 'No heart-rate samples found';
@@ -697,6 +713,10 @@ async function ensureParsed(f) {
       if (daily?.xs?.length) parts.push(daily);
     }
     const merged = mergeSeries(parts, f.meta);
+    // The virtual source is the only consumer of the individual daily entries. Release their
+    // typed arrays after merging; otherwise a full current export keeps both every daily series
+    // and the merged series alive, roughly doubling the heart-rate memory footprint.
+    for (const file of f.files) seriesCache.delete(file.name);
     seriesCache.set(f.name, merged);
     return merged;
   }

@@ -78,6 +78,7 @@
       font-size: 13px; font-weight: 500; border: none;
     }
     .pick:hover { filter: brightness(1.06); }
+    .pick-secondary { background: var(--s3); }
     .pick input { display: none; }
     .ghost {
       display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -223,6 +224,10 @@
       Choose Takeout folder
       <input type="file" id="folder" webkitdirectory multiple>
     </label>
+    <label class="pick pick-secondary">
+      Choose Takeout ZIP
+      <input type="file" id="zip" accept=".zip,application/zip">
+    </label>
     <button class="ghost" id="themeBtn" title="Toggle light / dark" aria-label="Toggle light or dark theme">◐</button>
   </header>
 
@@ -298,6 +303,7 @@
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-hotline@0.4.0/dist/leaflet.hotline.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.7.29/dist/zip-full.min.js"></script>
   <script type="module" src="./ui/app.js"></script>
 </body>
 </html>
