@@ -11,6 +11,8 @@ An **aggregate timeline**: one lane per metric, stacked on a single shared time 
 - **Heart rate at full resolution.** Every sample, not an average. Zoom from five years down to a minute.
 - **Daily band for the long view.** A per-day min–max envelope with the daily average through it, so "how does this month compare with six months ago" is visible at a glance; zoom in and the raw samples take over.
 - **Read any moment.** Move across the timeline and the inspector shows every selected metric at that instant, that day's resting and peak, and any activity or ECG reading around it. Click to pin.
+- **Explain a heart-rate moment.** Pin a sample and the inspector lazily reads that day's Pixel Watch activity classifier, showing the most likely state (walking, running, still, vehicle, etc.) and its probability.
+- **See speed and pace when exported.** Google Health speed files are merged with Fit history; the inspector also converts speed to a minutes-per-kilometre pace. A lane explicitly says when a selected metric has no samples in the current time window.
 - **Activities and ECG on the same axis.** A ribbon under the lanes; click a block to open the GPS track, click an ECG tick to open the waveform — as a sheet over the timeline, so you keep your place.
 - **Headline numbers, scoped to what you're looking at.** Resting heart rate (with the change against the preceding period), average, peak, and the sampling resolution of the window.
 - Range presets, per-metric filter chips, a table view, and light/dark.
@@ -31,7 +33,9 @@ Each Takeout data type is handled by a small parser that turns its format into a
 index.html      the shell: palette, layout, filters
 core/           registry (parser lookup), align (shared timeline), timejoin (nearest-value)
 parsers/        fit-datapoints (Fit "All Data" JSON), fit-daily (daily summary CSV),
-                google-health-heart-rate (Pixel Watch daily CSVs), tcx (activities),
+                google-health-heart-rate (Pixel Watch daily CSVs), google-health-activity
+                (activity probabilities), google-health-timeseries (speed and steps),
+                tcx (activities),
                 ecg (waveforms)
 ui/             timeline (the lanes), stats (KPIs + table), inspector wiring in app,
                 map (Leaflet track), ecg (waveform), loader, app (orchestration)
@@ -40,7 +44,7 @@ ui/             timeline (the lanes), stats (KPIs + table), inspector wiring in 
 ## Status
 
 Working for Fit `All Data` (heart rate, steps, speed and other same-schema types), the Fit daily
-activity summary, Google Health Pixel Watch heart-rate CSVs, TCX activities, and Pixel Watch /
+activity summary, Google Health Pixel Watch heart-rate CSVs and speed/steps, TCX activities, and Pixel Watch /
 Fitbit ECG readings. Not yet parsed: the remaining `Google Health/*` CSV folders (resting heart
 rate from sleep, HRV, breathing rate, SpO2, sleep stages) and the Fit session files. See `spec.md`
 for the full list.

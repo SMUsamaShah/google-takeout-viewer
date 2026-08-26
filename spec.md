@@ -35,6 +35,19 @@ matching daily files with the Fit heart-rate series: the Fit stream supplies old
 Google Health extends it when the Fit merge is stale. Exact timestamp collisions prefer the
 Google Health value. The import status reports the resulting latest timestamp and source count.
 
+### Google Health activity probabilities — `Takeout/Google Health/Health Fitness Data_GoogleData/UserActivityProbabilities_YYYY-MM-DD.csv`
+
+Each row covers a short interval (normally about one second) and contains probabilities for
+still, walking, running, cycling, vehicle, gym, and other classes. These are a watch classifier,
+not confirmed workout records. Files are indexed at folder load but parsed lazily when a moment
+is pinned; only the top three classes per interval are retained.
+
+### Google Health speed and steps — `Takeout/Google Health/Physical Activity_GoogleData/{speed,steps}_YYYY-MM-DD.csv`
+
+Daily speed and step files are merged with the corresponding historical Fit series. Speed is
+shown in m/s on the chart and converted to km/h and minutes per kilometre in the inspector.
+These files are sparse: no speed sample means pace cannot be inferred for that moment.
+
 ### TCX activities — `Takeout/Fit/Activities/*.tcx` (Garmin XML)
 Ordered `<Trackpoint>`s. In this export, `Position` (lat/lon) and `HeartRateBpm` **never share a
 trackpoint** — they interleave. So a track's GPS path and any scalar values are separate streams,
@@ -87,8 +100,10 @@ strip, click an activity → map.
 3. Heart rate shows on the chart by default. All daily Google Health heart-rate files are merged
    with the Fit stream; speed also parses quietly so the map can colour by it.
 4. Ticking a metric parses its file once (cached) and adds/overlays it on the chart.
-5. Clicking an activity parses that TCX and, if it has GPS, shows it on the map.
-6. Clicking an ECG reading parses that CSV and shows its waveform.
+5. Clicking a moment pins it; when an activity-probability file exists for that date, the
+   inspector shows the most likely watch-classified activity and top alternatives.
+6. Clicking an activity parses that TCX and, if it has GPS, shows it on the map.
+7. Clicking an ECG reading parses that CSV and shows its waveform.
 
 ## Timeline (chart)
 
@@ -144,7 +159,7 @@ Add one file in `parsers/` exporting `{ match(name), parse(text, name) -> Series
   device rate, not stated in the files. Only `afib_ecg_reading_*.csv` is read; the equivalent
   consolidated `EcgUserData.csv` (comma-separated waveform) is ignored to avoid duplicate readings.
 - Not yet handled: `All Sessions/*.json`, CSV daily metrics, and the rest of `Google Health/*`
-  (SpO2, sleep, stress, temperature, HRV, activity probabilities, etc.).
+  (SpO2, sleep, stress, temperature, HRV, and other health summaries).
 - The second Takeout zip (`archive_browser.html`) is a real manifest (every filename grouped by
   folder, plus per-product counts and total sizes) but is not parsed: the folder scan already
   yields the same files with sizes and their contents. An overview (counts/sizes) is derived from
