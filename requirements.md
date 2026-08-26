@@ -22,6 +22,8 @@ specific data or activity types. Overlaying more data should show **more**, not 
 - **Metrics over time** (chart): heart rate, walking pace/speed, and other scalar metrics.
   Overlay more than one on a shared time axis. I must be able to **zoom in and see the raw,
   non-aggregated data**, not just a smoothed/bucketed overview.
+- **Explain heart-rate events**: at a selected moment, show the watch's likely activity (walking,
+  running, still, vehicle, etc.) and probability, plus speed/pace when the export contains it.
 - **GPS activities on a map** (OpenStreetMap): if an activity has GPS, show the walk/ride as a
   line on the map. Colour the line by **heart rate, speed, or any metric I choose**, so I can
   see, say, where my heart rate was highest along the route.

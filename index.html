@@ -140,6 +140,7 @@
     .lane-title .key { width: 14px; height: 2.5px; border-radius: 2px; flex: none; }
     .lane-unit { font-size: 11.5px; color: var(--muted); }
     .lane-now { margin-left: auto; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+    .lane-now.no-data { color: var(--muted); font-style: italic; }
     .lane-plot { padding: 0 6px 4px; }
     .empty-note { padding: 30px 16px; text-align: center; color: var(--muted); font-size: 13px; }
 
@@ -168,6 +169,12 @@
     .readout .r .val.none { color: var(--muted); font-weight: 400; font-size: 13px; }
     .insp-sec { margin-top: 18px; }
     .insp-sec h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+    .activity-result { padding: 10px 11px; background: var(--plane); border: 1px solid var(--border); border-radius: 8px; color: var(--ink-2); font-size: 12.5px; }
+    .activity-primary { display: flex; align-items: baseline; gap: 8px; color: var(--ink); }
+    .activity-primary strong { font-size: 15px; }
+    .activity-primary span { color: var(--good); font-weight: 600; }
+    .activity-alt { margin-top: 5px; color: var(--muted); font-size: 11.5px; }
+    .activity-note { margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.4; }
     .ev {
       display: flex; align-items: center; gap: 9px; padding: 8px 10px; margin-bottom: 6px;
       background: var(--plane); border: 1px solid var(--border); border-radius: 8px;

@@ -32,6 +32,7 @@ export function renderTimeline(container, opts) {
 
   const extent = fullExtent(lanes, activities);
   const plots = [];
+  const laneNowEls = [];
   let win = { min: extent.min, max: extent.max };
   let applying = false; // guards the setScale fan-out from re-entering
 
@@ -43,6 +44,7 @@ export function renderTimeline(container, opts) {
     applying = true;
     for (const p of plots) p.setScale('x', { min, max });
     applying = false;
+    updateLaneCoverage();
     drawRibbon();
     if (opts.onRange) opts.onRange(min, max);
   };
@@ -61,6 +63,7 @@ export function renderTimeline(container, opts) {
     container.appendChild(el);
 
     const host = el.querySelector('.lane-plot');
+    laneNowEls.push(el.querySelector('[data-now]'));
     const isLast = li === lanes.length - 1 && activities.length === 0 && ecgs.length === 0;
     const p = buildLanePlot(host, lane, win, isLast, {
       onHover: (t, vals) => { report(t, vals, li); },
@@ -81,7 +84,7 @@ export function renderTimeline(container, opts) {
     el.className = 'lane';
     el.innerHTML =
       `<div class="lane-head">
-         <span class="lane-title"><i class="key" style="background:var(--s3)"></i>Activities</span>
+         <span class="lane-title"><i class="key" style="background:var(--s3)"></i>Recorded activities</span>
          <span class="lane-unit">${activities.length} recorded${ecgs.length ? ` · ${ecgs.length} ECG` : ''}</span>
          <span class="lane-now" data-now></span>
        </div>
@@ -97,6 +100,14 @@ export function renderTimeline(container, opts) {
   }
 
   function drawRibbon() { /* the ribbon plot redraws itself on scale change */ }
+
+  function updateLaneCoverage() {
+    lanes.forEach((lane, i) => {
+      const count = countInRange(lane.series.xs, win.min, win.max);
+      laneNowEls[i].textContent = count ? `${count.toLocaleString()} samples` : 'No samples in this window';
+      laneNowEls[i].classList.toggle('no-data', !count);
+    });
+  }
 
   // ---- shared hover readout ----------------------------------------------------
   function report(t, _vals, fromLane) {
@@ -123,6 +134,7 @@ export function renderTimeline(container, opts) {
   };
   window.addEventListener('resize', onResize);
 
+  updateLaneCoverage();
   requestAnimationFrame(() => { onResize(); drawRibbon(); });
 
   inst = {
@@ -144,6 +156,15 @@ export function destroyTimeline() {
 }
 
 export function timeline() { return inst; }
+
+function countInRange(xs, min, max) {
+  let lo = 0, hi = xs.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (xs[m] < min) lo = m + 1; else hi = m; }
+  const first = lo;
+  hi = xs.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (xs[m] <= max) lo = m + 1; else hi = m; }
+  return lo - first;
+}
 
 // ---- one lane ------------------------------------------------------------------
 function buildLanePlot(host, lane, win, showXAxis, hooks) {

@@ -2,6 +2,23 @@
 
 Newest first. Each entry: the decision, why, and what was rejected.
 
+## 34. Merge Google Health speed and steps with Fit history
+The current Takeout contains daily Pixel Watch speed and step CSVs in addition to the stale Fit
+series. They are merged using the same timestamp precedence as heart rate, so the metric chips do
+not silently choose an old Fit-only range. Speed remains a scalar lane, with pace derived in the
+inspector as minutes per kilometre. A speed sample is not invented when the export has none:
+the lane explicitly says that the selected window has no samples, because pace cannot be inferred
+from an activity label alone.
+
+## 33. Activity probabilities are a lazy inspector lookup
+`UserActivityProbabilities_YYYY-MM-DD.csv` contains roughly one row per second and can be tens
+of megabytes per day. Indexing filenames is cheap, but parsing every day on folder load would
+make a current-data import slow and consume substantial memory. The viewer therefore parses only
+the day containing a pinned moment, keeps compact top-three typed arrays, and retains at most four
+recently used days. The result is shown as a likely classifier state with probabilities, not as a
+confirmed workout. A full activity-probability lane was rejected because it would be visually
+dense and imply more certainty than the source provides.
+
 ## 32. One lane per metric on a shared time axis — never a dual-axis overlay
 Overlaying metrics with different units forced a second y-axis, and a dual-axis chart is the
 single worst chart mistake there is: the alignment of the two scales is arbitrary, so the

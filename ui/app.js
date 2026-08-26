@@ -19,6 +19,8 @@ import { fitDailyParser } from '../parsers/fit-daily.js';           // registers
 import { tcxParser } from '../parsers/tcx.js';                      // registers
 import { ecgParser } from '../parsers/ecg.js';                      // registers
 import { googleHealthHeartRateParser } from '../parsers/google-health-heart-rate.js'; // registers
+import { googleHealthActivityParser } from '../parsers/google-health-activity.js';
+import { googleHealthTimeseriesParser } from '../parsers/google-health-timeseries.js'; // registers
 
 const el = (id) => document.getElementById(id);
 const DAY = 86400;
@@ -35,10 +37,12 @@ const METRIC_SLOT = {
 
 const seriesCache = new Map();
 let metricEntries = [], actEntries = [], ecgEntries = [];
+let activityProbFiles = new Map(), activityProbCache = new Map();
 let dailyHR = null, hrSeries = null;
 let selected = new Set();
 let pinnedT = null;
 let currentTrack = null, currentReading = null;
+let activityContextRequest = 0;
 
 // ---- folder load ----------------------------------------------------------------
 el('folder').addEventListener('change', async (e) => {
@@ -50,6 +54,9 @@ el('folder').addEventListener('change', async (e) => {
   pinnedT = null;
   hrSeries = null;
   dailyHR = null;
+  activityProbFiles = new Map();
+  activityProbCache.clear();
+  activityContextRequest++;
   destroyTimeline();
   setStatus('Reading folder …');
 
@@ -89,6 +96,15 @@ el('folder').addEventListener('change', async (e) => {
     });
   }
 
+  // Google Health also exports current speed and step counts as daily CSVs. Merge them with
+  // the historical Fit series so selecting a secondary metric does not silently choose a
+  // stale Fit-only file. These streams are intentionally not selected by default: the shared
+  // time axis means a metric can legitimately have no sample in the current HR window.
+  const healthSpeedFiles = all.filter((f) => googleHealthTimeseriesParser.match(f.name) && /^speed_/i.test(f.name));
+  const healthStepsFiles = all.filter((f) => googleHealthTimeseriesParser.match(f.name) && /^steps_/i.test(f.name));
+  replaceWithHealthSeries('speed', 'Speed / pace', healthSpeedFiles);
+  replaceWithHealthSeries('step_count.delta', 'Steps', healthStepsFiles);
+
   actEntries = all.filter((f) => /\.tcx$/i.test(f.name)).map((f) => {
     const d = fromActivityName(f.name);
     return { ...f, ...d, t: d.tMs / 1000, dur: d.durSec, ref: f };
@@ -98,6 +114,12 @@ el('folder').addEventListener('change', async (e) => {
     const ms = +(f.name.match(/(\d+)\.csv$/) || [, 0])[1];
     return { ...f, t: ms / 1000, ref: f };
   }).filter((x) => x.t > 0).sort((a, b) => a.t - b.t);
+
+  for (const f of all) {
+    if (!googleHealthActivityParser.match(f.name)) continue;
+    const date = (f.name.match(/(\d{4}-\d{2}-\d{2})/) || [, ''])[1];
+    if (date) activityProbFiles.set(date, f);
+  }
 
   setStatus('Parsing heart rate …');
   await tick();
@@ -112,7 +134,7 @@ el('folder').addEventListener('change', async (e) => {
   if (sp) await ensureParsed(sp.best); // map colour source
 
   buildChips();
-  setStatus(importSummary(hrSeries, healthHRFiles.length, fitHR?.best));
+  setStatus(importSummary(hrSeries, healthHRFiles.length, fitHR?.best, activityProbFiles.size));
   render();
 
   // Open on the most recent continuous stretch of heart rate: bursty data means a fixed
@@ -126,7 +148,7 @@ el('folder').addEventListener('change', async (e) => {
   syncAfterWindow();
 });
 
-function importSummary(series, detailedFiles, fitFile) {
+function importSummary(series, detailedFiles, fitFile, activityDays = 0) {
   if (!series?.xs?.length) return 'No heart-rate samples found';
   const end = new Date(series.xs[series.xs.length - 1] * 1000);
   const source = detailedFiles
@@ -137,7 +159,22 @@ function importSummary(series, detailedFiles, fitFile) {
   const last = series.xs[series.xs.length - 1];
   const newer = detailedFiles && (!Number.isFinite(fitEnd) || last > fitEnd + 60);
   const note = newer ? ' · detailed data extends beyond Fit' : '';
-  return `Heart rate through ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}${source}${note}`;
+  const classifier = activityDays ? ` · activity classifier ${activityDays} day${activityDays === 1 ? '' : 's'}` : '';
+  return `Heart rate through ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}${source}${classifier}${note}`;
+}
+
+function replaceWithHealthSeries(typeKey, label, files) {
+  if (!files.length) return;
+  const fit = metricEntries.find((m) => m.typeKey === typeKey);
+  metricEntries = metricEntries.filter((m) => m.typeKey !== typeKey);
+  metricEntries.push({ typeKey, label, best: {
+    name: `__merged_google_health_${typeKey}__`, kind: 'merged-series',
+    fit: fit?.best || null, files,
+    meta: { id: `merged:${typeKey}`, dataType: typeKey === 'speed' ? 'com.google.speed' : 'com.google.step_count.delta',
+      label, unit: typeKey === 'speed' ? 'm/s' : 'steps', source: 'Fit + Google Health' },
+    size: files.reduce((n, f) => n + f.size, fit?.best?.size || 0),
+  }});
+  metricEntries.sort((a, b) => (a.typeKey === 'heart_rate.bpm' ? -1 : b.typeKey === 'heart_rate.bpm' ? 1 : a.label.localeCompare(b.label)));
 }
 
 // ---- metric chips ---------------------------------------------------------------
@@ -270,6 +307,10 @@ function updateInspector(t, pinned) {
     const v = sampleAt(s, t);
     if (v != null) any = true;
     readout.appendChild(readRow(m.label, colorFor(m.typeKey), v, s.unit));
+    if (m.typeKey === 'speed' && Number.isFinite(v) && v > 0.1) {
+      readout.appendChild(readTextRow('Walking pace', colorFor(m.typeKey), `${pace(v)} min/km`));
+      readout.appendChild(readTextRow('Speed', colorFor(m.typeKey), `${(v * 3.6).toFixed(1)} km/h`));
+    }
   }
   // The daily band's own numbers for that day — the context the raw sample sits in.
   if (dailyHR) {
@@ -280,6 +321,28 @@ function updateInspector(t, pinned) {
     }
   }
   body.appendChild(readout);
+
+  const activitySec = document.createElement('div');
+  activitySec.className = 'insp-sec';
+  const activityHeading = document.createElement('h4');
+  activityHeading.textContent = 'Watch activity classifier';
+  activitySec.appendChild(activityHeading);
+  const activityResult = document.createElement('div');
+  activityResult.className = 'activity-result';
+  activitySec.appendChild(activityResult);
+  body.appendChild(activitySec);
+  const activityKey = activityDateKey(t);
+  const cached = activityProbCache.get(activityKey);
+  if (cached) {
+    renderActivityContext(activityResult, googleHealthActivityParser.lookup(cached, t));
+  } else if (pinned) {
+    activityResult.textContent = activityProbFiles.has(activityKey) ? 'Reading the watch classifier …' : 'No classifier file for this date.';
+    loadActivityContext(t, activityResult);
+  } else {
+    activityResult.textContent = activityProbFiles.has(activityKey)
+      ? 'Click to pin this moment and identify the activity.'
+      : 'No classifier file for this date.';
+  }
 
   if (!any) {
     const p = document.createElement('p');
@@ -321,6 +384,59 @@ function updateInspector(t, pinned) {
   }
 }
 
+function activityDateKey(t) {
+  return new Date(t * 1000).toISOString().slice(0, 10);
+}
+
+async function loadActivityContext(t, host) {
+  const request = ++activityContextRequest;
+  const key = activityDateKey(t);
+  const file = activityProbFiles.get(key);
+  if (!file) return;
+  await tick();
+  try {
+    const parsed = googleHealthActivityParser.parse(await file.getText(), file.name);
+    if (parsed) {
+      activityProbCache.set(key, parsed);
+      while (activityProbCache.size > 4) activityProbCache.delete(activityProbCache.keys().next().value);
+    }
+    if (request !== activityContextRequest || !host.isConnected) return;
+    renderActivityContext(host, parsed ? googleHealthActivityParser.lookup(parsed, t) : null);
+  } catch {
+    if (request === activityContextRequest && host.isConnected) host.textContent = 'Could not read this classifier file.';
+  }
+}
+
+function renderActivityContext(host, context) {
+  host.innerHTML = '';
+  if (!context?.choices?.length) {
+    host.textContent = 'No classifier sample near this moment.';
+    return;
+  }
+  const primary = document.createElement('div');
+  primary.className = 'activity-primary';
+  const name = document.createElement('strong');
+  name.textContent = context.choices[0].label;
+  const confidence = document.createElement('span');
+  confidence.textContent = `${percent(context.choices[0].probability)} likely`;
+  primary.append(name, confidence);
+  host.appendChild(primary);
+  if (context.choices.length > 1) {
+    const alternatives = document.createElement('div');
+    alternatives.className = 'activity-alt';
+    alternatives.textContent = `Also: ${context.choices.slice(1).map((x) => `${x.label} ${percent(x.probability)}`).join(' · ')}`;
+    host.appendChild(alternatives);
+  }
+  const note = document.createElement('div');
+  note.className = 'activity-note';
+  note.textContent = 'Per-second watch classification; not a confirmed workout record.';
+  host.appendChild(note);
+}
+
+function percent(v) {
+  return v >= 0.01 ? `${Math.round(v * 100)}%` : '<1%';
+}
+
 function readRow(name, color, v, unit) {
   const r = document.createElement('div');
   r.className = 'r';
@@ -334,6 +450,22 @@ function readRow(name, color, v, unit) {
   }
   r.append(k, n, val);
   return r;
+}
+
+function readTextRow(name, color, text) {
+  const r = document.createElement('div');
+  r.className = 'r';
+  const k = document.createElement('i'); k.className = 'key'; k.style.background = color;
+  const n = document.createElement('span'); n.className = 'n'; n.textContent = name;
+  const val = document.createElement('span'); val.className = 'val'; val.textContent = text;
+  r.append(k, n, val);
+  return r;
+}
+
+function pace(speedMps) {
+  const total = Math.round(1000 / speedMps / 60);
+  if (!Number.isFinite(total) || total > 99) return '—';
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
 // ---- coverage navigator ----------------------------------------------------------
@@ -554,7 +686,7 @@ async function openReading(f) {
 // ---- parsing ----------------------------------------------------------------------
 async function ensureParsed(f) {
   if (seriesCache.has(f.name)) return seriesCache.get(f.name);
-  if (f.kind === 'merged-heart-rate') {
+  if (f.kind === 'merged-heart-rate' || f.kind === 'merged-series') {
     const parts = [];
     if (f.fit) {
       const fit = await ensureParsed(f.fit);
@@ -564,7 +696,7 @@ async function ensureParsed(f) {
       const daily = await ensureParsed(file);
       if (daily?.xs?.length) parts.push(daily);
     }
-    const merged = mergeSeries(parts);
+    const merged = mergeSeries(parts, f.meta);
     seriesCache.set(f.name, merged);
     return merged;
   }
@@ -581,7 +713,7 @@ async function ensureParsed(f) {
 // keeps memory bounded: the current export has nearly two million detailed
 // samples, so building an object for every point would create unnecessary GC
 // pressure in the browser.
-function mergeSeries(parts) {
+function mergeSeries(parts, meta = {}) {
   if (!parts.length) return null;
 
   const total = parts.reduce((n, s) => n + s.xs.length, 0);
@@ -639,9 +771,9 @@ function mergeSeries(parts) {
     n++;
   }
   return {
-    id: 'merged:com.google.heart_rate.bpm',
-    dataType: 'com.google.heart_rate.bpm',
-    label: 'Heart rate', unit: 'bpm', source: 'Fit + Google Health',
+    id: meta.id || 'merged:com.google.heart_rate.bpm',
+    dataType: meta.dataType || 'com.google.heart_rate.bpm',
+    label: meta.label || 'Heart rate', unit: meta.unit || 'bpm', source: meta.source || 'Fit + Google Health',
     xs: xs.subarray(0, n), ys: ys.subarray(0, n),
   };
 }
