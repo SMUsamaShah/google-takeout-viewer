@@ -28,6 +28,13 @@ All share one schema:
 - `startTimeNanos` exceeds 2^53, so JSON.parse loses sub-second precision — harmless at ≥1s.
 - One file = one series. Merge files are **not** time-ordered, so the parser sorts.
 
+### Google Health heart rate — `Takeout/Google Health/Physical Activity_GoogleData/heart_rate_YYYY-MM-DD.csv`
+
+Pixel Watch readings are exported as one high-resolution CSV per day. The loader combines all
+matching daily files with the Fit heart-rate series: the Fit stream supplies older history, while
+Google Health extends it when the Fit merge is stale. Exact timestamp collisions prefer the
+Google Health value. The import status reports the resulting latest timestamp and source count.
+
 ### TCX activities — `Takeout/Fit/Activities/*.tcx` (Garmin XML)
 Ordered `<Trackpoint>`s. In this export, `Position` (lat/lon) and `HeartRateBpm` **never share a
 trackpoint** — they interleave. So a track's GPS path and any scalar values are separate streams,
@@ -77,7 +84,8 @@ strip, click an activity → map.
 1. Pick the extracted Takeout folder (`<input webkitdirectory>`). Nothing is read yet.
 2. The sidebar populates. Metric rows are derived from filenames (collapsed per type); activity and
    ECG rows are labelled from their filenames. Files are read only when selected.
-3. Heart rate shows on the chart by default; speed also parses quietly so the map can colour by it.
+3. Heart rate shows on the chart by default. All daily Google Health heart-rate files are merged
+   with the Fit stream; speed also parses quietly so the map can colour by it.
 4. Ticking a metric parses its file once (cached) and adds/overlays it on the chart.
 5. Clicking an activity parses that TCX and, if it has GPS, shows it on the map.
 6. Clicking an ECG reading parses that CSV and shows its waveform.
@@ -136,7 +144,7 @@ Add one file in `parsers/` exporting `{ match(name), parse(text, name) -> Series
   device rate, not stated in the files. Only `afib_ecg_reading_*.csv` is read; the equivalent
   consolidated `EcgUserData.csv` (comma-separated waveform) is ignored to avoid duplicate readings.
 - Not yet handled: `All Sessions/*.json`, CSV daily metrics, and the rest of `Google Health/*`
-  (SpO2, sleep, stress, temperature, etc.).
+  (SpO2, sleep, stress, temperature, HRV, activity probabilities, etc.).
 - The second Takeout zip (`archive_browser.html`) is a real manifest (every filename grouped by
   folder, plus per-product counts and total sizes) but is not parsed: the folder scan already
   yields the same files with sizes and their contents. An overview (counts/sizes) is derived from

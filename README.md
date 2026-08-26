@@ -31,7 +31,8 @@ Each Takeout data type is handled by a small parser that turns its format into a
 index.html      the shell: palette, layout, filters
 core/           registry (parser lookup), align (shared timeline), timejoin (nearest-value)
 parsers/        fit-datapoints (Fit "All Data" JSON), fit-daily (daily summary CSV),
-                tcx (activities), ecg (waveforms)
+                google-health-heart-rate (Pixel Watch daily CSVs), tcx (activities),
+                ecg (waveforms)
 ui/             timeline (the lanes), stats (KPIs + table), inspector wiring in app,
                 map (Leaflet track), ecg (waveform), loader, app (orchestration)
 ```
@@ -39,6 +40,7 @@ ui/             timeline (the lanes), stats (KPIs + table), inspector wiring in 
 ## Status
 
 Working for Fit `All Data` (heart rate, steps, speed and other same-schema types), the Fit daily
-activity summary, TCX activities, and Pixel Watch / Fitbit ECG readings. Not yet parsed: the
-`Google Health/*` CSV folders (resting heart rate from sleep, HRV, breathing rate, SpO2, sleep
-stages) and the Fit session files. See `spec.md` for the full list.
+activity summary, Google Health Pixel Watch heart-rate CSVs, TCX activities, and Pixel Watch /
+Fitbit ECG readings. Not yet parsed: the remaining `Google Health/*` CSV folders (resting heart
+rate from sleep, HRV, breathing rate, SpO2, sleep stages) and the Fit session files. See `spec.md`
+for the full list.

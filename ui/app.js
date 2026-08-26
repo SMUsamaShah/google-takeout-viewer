@@ -18,6 +18,7 @@ import { fitDataPointsParser } from '../parsers/fit-datapoints.js'; // registers
 import { fitDailyParser } from '../parsers/fit-daily.js';           // registers
 import { tcxParser } from '../parsers/tcx.js';                      // registers
 import { ecgParser } from '../parsers/ecg.js';                      // registers
+import { googleHealthHeartRateParser } from '../parsers/google-health-heart-rate.js'; // registers
 
 const el = (id) => document.getElementById(id);
 const DAY = 86400;
@@ -42,6 +43,14 @@ let currentTrack = null, currentReading = null;
 // ---- folder load ----------------------------------------------------------------
 el('folder').addEventListener('change', async (e) => {
   const all = filesFromInput(e.target.files);
+  // A new Takeout must never reuse parsed data from the previous folder. This is
+  // particularly important when two exports contain identically named daily files.
+  seriesCache.clear();
+  selected.clear();
+  pinnedT = null;
+  hrSeries = null;
+  dailyHR = null;
+  destroyTimeline();
   setStatus('Reading folder …');
 
   const byType = new Map();
@@ -58,6 +67,27 @@ el('folder').addEventListener('change', async (e) => {
     .filter(([k]) => !HIDE.test(k))
     .map(([typeKey, best]) => ({ typeKey, best, label: metricLabel(typeKey) }))
     .sort((a, b) => (a.typeKey === 'heart_rate.bpm' ? -1 : b.typeKey === 'heart_rate.bpm' ? 1 : a.label.localeCompare(b.label)));
+
+  // Google Health stores Pixel Watch heart rate in one CSV per day. Keep the
+  // historical Fit stream, but replace its single-file heart-rate entry with a
+  // virtual source that merges all detailed CSV files. Without this, the largest
+  // Fit JSON wins and the chart can stop months before the actual export does.
+  const healthHRFiles = all.filter((f) => googleHealthHeartRateParser.match(f.name));
+  const fitHR = metricEntries.find((m) => m.typeKey === 'heart_rate.bpm');
+  if (healthHRFiles.length) {
+    metricEntries = metricEntries.filter((m) => m.typeKey !== 'heart_rate.bpm');
+    metricEntries.unshift({
+      typeKey: 'heart_rate.bpm',
+      label: 'Heart rate',
+      best: {
+        name: '__merged_google_health_heart_rate__',
+        kind: 'merged-heart-rate',
+        fit: fitHR?.best || null,
+        files: healthHRFiles,
+        size: healthHRFiles.reduce((n, f) => n + f.size, fitHR?.best?.size || 0),
+      },
+    });
+  }
 
   actEntries = all.filter((f) => /\.tcx$/i.test(f.name)).map((f) => {
     const d = fromActivityName(f.name);
@@ -82,7 +112,7 @@ el('folder').addEventListener('change', async (e) => {
   if (sp) await ensureParsed(sp.best); // map colour source
 
   buildChips();
-  setStatus('');
+  setStatus(importSummary(hrSeries, healthHRFiles.length, fitHR?.best));
   render();
 
   // Open on the most recent continuous stretch of heart rate: bursty data means a fixed
@@ -95,6 +125,20 @@ el('folder').addEventListener('change', async (e) => {
   }
   syncAfterWindow();
 });
+
+function importSummary(series, detailedFiles, fitFile) {
+  if (!series?.xs?.length) return 'No heart-rate samples found';
+  const end = new Date(series.xs[series.xs.length - 1] * 1000);
+  const source = detailedFiles
+    ? ` · ${detailedFiles} Google Health file${detailedFiles === 1 ? '' : 's'}${fitFile ? ' + Fit' : ''}`
+    : ' · Fit';
+  const fitSeries = fitFile ? seriesCache.get(fitFile.name) : null;
+  const fitEnd = fitSeries?.xs?.length ? fitSeries.xs[fitSeries.xs.length - 1] : NaN;
+  const last = series.xs[series.xs.length - 1];
+  const newer = detailedFiles && (!Number.isFinite(fitEnd) || last > fitEnd + 60);
+  const note = newer ? ' · detailed data extends beyond Fit' : '';
+  return `Heart rate through ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}${source}${note}`;
+}
 
 // ---- metric chips ---------------------------------------------------------------
 function buildChips() {
@@ -510,11 +554,96 @@ async function openReading(f) {
 // ---- parsing ----------------------------------------------------------------------
 async function ensureParsed(f) {
   if (seriesCache.has(f.name)) return seriesCache.get(f.name);
+  if (f.kind === 'merged-heart-rate') {
+    const parts = [];
+    if (f.fit) {
+      const fit = await ensureParsed(f.fit);
+      if (fit?.xs?.length) parts.push(fit);
+    }
+    for (const file of f.files) {
+      const daily = await ensureParsed(file);
+      if (daily?.xs?.length) parts.push(daily);
+    }
+    const merged = mergeSeries(parts);
+    seriesCache.set(f.name, merged);
+    return merged;
+  }
   const p = findParser(f.name);
   if (!p) { seriesCache.set(f.name, null); return null; }
   const out = p.parse(await f.getText(), f.name);
   seriesCache.set(f.name, out[0] || null);
   return seriesCache.get(f.name);
+}
+
+// Merge sources by timestamp, preferring the later source in the list. The
+// detailed Google Health readings are appended after Fit, so an exact overlap
+// uses the watch export while older history still comes from Fit. A k-way merge
+// keeps memory bounded: the current export has nearly two million detailed
+// samples, so building an object for every point would create unnecessary GC
+// pressure in the browser.
+function mergeSeries(parts) {
+  if (!parts.length) return null;
+
+  const total = parts.reduce((n, s) => n + s.xs.length, 0);
+  const xs = new Float64Array(total), ys = new Float64Array(total);
+  const heap = [];
+  const less = (a, b) => a.t < b.t;
+  const push = (entry) => {
+    let i = heap.length;
+    heap.push(entry);
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!less(heap[i], heap[p])) break;
+      [heap[i], heap[p]] = [heap[p], heap[i]];
+      i = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1, r = l + 1;
+        let child = i;
+        if (l < heap.length && less(heap[l], heap[child])) child = l;
+        if (r < heap.length && less(heap[r], heap[child])) child = r;
+        if (child === i) break;
+        [heap[i], heap[child]] = [heap[child], heap[i]];
+        i = child;
+      }
+    }
+    return top;
+  };
+
+  for (let source = 0; source < parts.length; source++) {
+    if (parts[source].xs.length) push({ source, index: 0, t: parts[source].xs[0] });
+  }
+
+  let n = 0;
+  while (heap.length) {
+    const t = heap[0].t;
+    let winner = null;
+    while (heap.length && heap[0].t === t) {
+      const entry = pop();
+      if (!winner || entry.source >= winner.source) winner = entry;
+      entry.index++;
+      const s = parts[entry.source];
+      if (entry.index < s.xs.length) {
+        entry.t = s.xs[entry.index];
+        push(entry);
+      }
+    }
+    xs[n] = t;
+    ys[n] = parts[winner.source].ys[winner.index - 1];
+    n++;
+  }
+  return {
+    id: 'merged:com.google.heart_rate.bpm',
+    dataType: 'com.google.heart_rate.bpm',
+    label: 'Heart rate', unit: 'bpm', source: 'Fit + Google Health',
+    xs: xs.subarray(0, n), ys: ys.subarray(0, n),
+  };
 }
 
 // ---- helpers -----------------------------------------------------------------------
