@@ -10,6 +10,16 @@ inspector as minutes per kilometre. A speed sample is not invented when the expo
 the lane explicitly says that the selected window has no samples, because pace cannot be inferred
 from an activity label alone.
 
+## 35. Read ZIPs as lazy browser file entries
+The app already reads folder files lazily through `{ name, path, size, getText }`. ZIP.js can expose
+the ZIP central directory through a `BlobReader` and decompress an individual entry with a
+`TextWriter`, so the same parser pipeline can accept an archive without extracting it. The ZIP
+remains a browser `Blob`, and the reader uses worker-backed decoding. Extracting the complete
+archive with `unzipSync` was rejected because a 272 MB Takeout would require another large memory
+allocation and would make folder selection wait before any data could be viewed. Daily parsed
+series are released after virtual heart-rate/speed/step streams are merged to avoid retaining
+both all parts and the merged result.
+
 ## 33. Activity probabilities are a lazy inspector lookup
 `UserActivityProbabilities_YYYY-MM-DD.csv` contains roughly one row per second and can be tens
 of megabytes per day. Indexing filenames is cheap, but parsing every day on folder load would

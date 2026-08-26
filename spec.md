@@ -11,6 +11,9 @@ Two views over one folder load:
 - **Chart** — scalar time series (heart rate, speed, …) overlaid on a shared time axis.
 - **Map** — a GPS activity drawn on OpenStreetMap, its line coloured by a chosen series.
 
+The viewer also accepts the original Takeout ZIP. ZIP entries are indexed without extraction and
+decompressed lazily through the same file-entry interface used for an extracted folder.
+
 ## Supported input (v1)
 
 ### Fit "All Data" JSON — `Takeout/Fit/All Data/{raw|derived}_com.google.<type>_<source>.json`
@@ -94,7 +97,8 @@ strip, click an activity → map.
 
 ## Flow
 
-1. Pick the extracted Takeout folder (`<input webkitdirectory>`). Nothing is read yet.
+1. Pick the extracted Takeout folder (`<input webkitdirectory>`) or a Takeout ZIP (`<input type=file>`).
+   For a ZIP, only its central directory is indexed initially; entry contents are read lazily.
 2. The sidebar populates. Metric rows are derived from filenames (collapsed per type); activity and
    ECG rows are labelled from their filenames. Files are read only when selected.
 3. Heart rate shows on the chart by default. All daily Google Health heart-rate files are merged
