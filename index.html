@@ -3,76 +3,291 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Google Takeout Viewer</title>
+  <title>Health Timeline — Google Takeout Viewer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    :root { --bg:#fff; --fg:#1a1a1a; --muted:#777; --line:#e6e6e6; --accent:#2e86ab; --sel:#eaf3f8; }
+    /* Palette per dataviz reference: validated categorical slots, both modes selected
+       (not an automatic flip). Dark values are declared under the media query (OS
+       setting) and the [data-theme] scope (explicit toggle) so the toggle wins both ways. */
+    :root {
+      color-scheme: light;
+      --surface:      #fcfcfb;
+      --plane:        #f9f9f7;
+      --raised:       #ffffff;
+      --ink:          #0b0b0b;
+      --ink-2:        #52514e;
+      --muted:        #898781;
+      --grid:         #e1e0d9;
+      --axis:         #c3c2b7;
+      --border:       rgba(11,11,11,0.10);
+      --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+      --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+      --band:         rgba(42,120,214,0.10);  /* HR daily band: same hue, recessive */
+      --good:         #006300;
+      --critical:     #d03b3b;
+      --shadow:       0 1px 2px rgba(11,11,11,.04), 0 4px 12px rgba(11,11,11,.05);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:where(:not([data-theme="light"])) {
+        color-scheme: dark;
+        --surface: #17181a; --plane: #0d0d0d; --raised: #1f2023;
+        --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+        --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+        --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+        --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+        --band: rgba(57,135,229,0.16);
+        --good: #0ca30c; --critical: #d03b3b;
+        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.25);
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --surface: #17181a; --plane: #0d0d0d; --raised: #1f2023;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+      --band: rgba(57,135,229,0.16);
+      --good: #0ca30c; --critical: #d03b3b;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.25);
+    }
+
     * { box-sizing: border-box; }
-    body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--fg); }
-    header { padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:16px; }
-    header h1 { font-size:15px; font-weight:600; margin:0; }
-    header .hint { color:var(--muted); font-size:12px; }
-    .pick { display:inline-block; padding:6px 12px; border:1px solid var(--accent); color:var(--accent); border-radius:6px; cursor:pointer; font-size:13px; }
-    .pick input { display:none; }
-    main { display:flex; height:calc(100vh - 51px); }
-    aside { width:280px; border-right:1px solid var(--line); overflow:auto; }
-    .panel-title { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:14px 14px 4px; }
-    .row { display:flex; align-items:center; gap:8px; padding:4px 14px; cursor:pointer; }
-    .row:hover { background:#f6f8fa; }
-    .row .name { font-size:13px; }
-    .item { display:flex; justify-content:space-between; gap:10px; padding:5px 14px; cursor:pointer; font-size:13px; }
-    .item:hover { background:#f6f8fa; }
-    .item.on { background:var(--sel); }
-    .item .sub { color:var(--muted); font-size:12px; white-space:nowrap; }
-    section { flex:1; display:flex; flex-direction:column; min-width:0; }
-    .viewhead { padding:10px 16px; border-bottom:1px solid var(--line); }
-    .viewhead #context { font-size:14px; font-weight:600; }
-    .toolbar { padding:6px 16px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:10px; min-height:31px; }
-    .toolbar select { font-size:12px; }
-    .view { flex:1; min-height:0; }
-    #chart { padding:8px; height:100%; }
-    #map { height:100%; }
-    .hidden { display:none; }
-    .empty { color:var(--muted); padding:24px 14px; font-size:13px; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; background: var(--plane); color: var(--ink);
+      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; color: inherit; }
+
+    /* ---- header ---- */
+    header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 20px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+    .brand svg { width: 18px; height: 18px; color: var(--s1); }
+    .brand .sub { color: var(--muted); font-weight: 400; font-size: 13px; }
+    .spacer { flex: 1; }
+    .pick {
+      display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px;
+      background: var(--s1); color: #fff; border-radius: 7px; cursor: pointer;
+      font-size: 13px; font-weight: 500; border: none;
+    }
+    .pick:hover { filter: brightness(1.06); }
+    .pick input { display: none; }
+    .ghost {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-width: 34px; height: 32px; padding: 0 9px; cursor: pointer; font-size: 13px;
+      background: transparent; border: 1px solid var(--border); border-radius: 7px; color: var(--ink-2);
+    }
+    .ghost:hover { background: var(--plane); color: var(--ink); }
+
+    /* ---- filter row (one row, above everything it scopes) ---- */
+    .filters {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .fgroup { display: flex; align-items: center; gap: 7px; }
+    .flabel { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+    .segmented { display: inline-flex; background: var(--plane); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+    .segmented button {
+      padding: 4px 11px; font-size: 12.5px; background: transparent; border: none;
+      border-radius: 6px; cursor: pointer; color: var(--ink-2); font-weight: 500;
+    }
+    .segmented button:hover { color: var(--ink); }
+    .segmented button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: var(--shadow); }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px 4px 8px;
+      font-size: 12.5px; background: var(--plane); border: 1px solid var(--border);
+      border-radius: 999px; cursor: pointer; color: var(--ink-2); user-select: none;
+    }
+    .chip:hover { border-color: var(--muted); color: var(--ink); }
+    .chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+    .chip[aria-pressed="true"] { background: var(--raised); color: var(--ink); border-color: var(--muted); font-weight: 500; }
+    .chip[disabled] { opacity: .38; cursor: not-allowed; }
+
+    /* ---- layout ---- */
+    main { display: grid; grid-template-columns: minmax(0,1fr) 316px; gap: 0; height: calc(100vh - 106px); }
+    .content { overflow: auto; padding: 16px 20px 22px; min-width: 0; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } aside.inspector { display: none; } }
+
+    /* ---- KPI row ---- */
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .tile {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 11px;
+      padding: 13px 15px; box-shadow: var(--shadow);
+    }
+    .tile .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+    .tile .v { font-size: 27px; font-weight: 600; letter-spacing: -.02em; margin-top: 3px; line-height: 1.15; }
+    .tile .v small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; letter-spacing: 0; }
+    .tile .d { font-size: 12px; margin-top: 3px; color: var(--muted); }
+    .tile .d.up { color: var(--critical); }
+    .tile .d.down { color: var(--good); }
+
+    /* ---- lanes ---- */
+    .lanes { background: var(--surface); border: 1px solid var(--border); border-radius: 11px; box-shadow: var(--shadow); overflow: hidden; }
+    .lane { border-bottom: 1px solid var(--border); position: relative; }
+    .lane:last-child { border-bottom: none; }
+    .lane-head {
+      display: flex; align-items: baseline; gap: 8px; padding: 9px 14px 2px;
+    }
+    .lane-title { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+    .lane-title .key { width: 14px; height: 2.5px; border-radius: 2px; flex: none; }
+    .lane-unit { font-size: 11.5px; color: var(--muted); }
+    .lane-now { margin-left: auto; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+    .lane-plot { padding: 0 6px 4px; }
+    .empty-note { padding: 30px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    /* ---- coverage navigator ---- */
+    .coverage { margin-top: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 11px 14px 9px; box-shadow: var(--shadow); }
+    .coverage .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-bottom: 7px; }
+    #covcanvas { width: 100%; height: 34px; display: block; cursor: pointer; border-radius: 4px; }
+    .coverage .legend { display: flex; gap: 14px; margin-top: 7px; font-size: 11.5px; color: var(--muted); }
+    .coverage .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .coverage .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+    /* ---- inspector ---- */
+    aside.inspector {
+      background: var(--surface); border-left: 1px solid var(--border);
+      overflow: auto; padding: 16px 16px 24px;
+    }
+    .insp-when { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+    .insp-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+    .insp-hint { color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .readout { margin-top: 14px; border-top: 1px solid var(--border); }
+    .readout .r { display: flex; align-items: baseline; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+    .readout .r .key { width: 12px; height: 2.5px; border-radius: 2px; flex: none; align-self: center; }
+    .readout .r .n { font-size: 12.5px; color: var(--ink-2); }
+    .readout .r .val { margin-left: auto; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .readout .r .val small { font-size: 11.5px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+    .readout .r .val.none { color: var(--muted); font-weight: 400; font-size: 13px; }
+    .insp-sec { margin-top: 18px; }
+    .insp-sec h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+    .ev {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px; margin-bottom: 6px;
+      background: var(--plane); border: 1px solid var(--border); border-radius: 8px;
+      cursor: pointer; font-size: 12.5px;
+    }
+    .ev:hover { border-color: var(--muted); }
+    .ev .i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+    .ev .t { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; font-size: 11.5px; }
+
+    /* ---- detail overlay (map / ECG) ---- */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; }
+    .overlay.hidden { display: none; }
+    .sheet { background: var(--surface); border-radius: 13px; width: min(920px, 94vw); height: min(660px, 90vh); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+    .sheet header { border-bottom: 1px solid var(--border); background: transparent; }
+    .sheet .body { flex: 1; min-height: 0; position: relative; }
+    #map, #ecg { position: absolute; inset: 0; }
+    .sheet .foot { padding: 9px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; display: flex; gap: 12px; align-items: center; }
+
+    /* ---- table view (accessibility twin) ---- */
+    .tablewrap { margin-top: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; box-shadow: var(--shadow); overflow: hidden; }
+    .tablewrap .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 11px 14px 0; }
+    .tscroll { overflow: auto; max-height: 300px; margin-top: 8px; }
+    table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+    th, td { text-align: right; padding: 6px 14px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; font-variant-numeric: normal; }
+    thead th { position: sticky; top: 0; background: var(--surface); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+    .hidden { display: none !important; }
+    .status { color: var(--muted); font-size: 12.5px; }
+
+    /* uPlot chrome to match */
+    .u-legend { display: none; }
+    .u-cursor-x, .u-cursor-y { border-color: var(--axis) !important; }
   </style>
 </head>
 <body>
   <header>
-    <h1>Google Takeout Viewer</h1>
-    <label class="pick">Choose Takeout folder<input type="file" id="folder" webkitdirectory multiple></label>
-    <span class="hint">health data</span>
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1L12 21l7.7-7.7 1.1-1a5.5 5.5 0 0 0 0-7.7z"/>
+      </svg>
+      Health Timeline <span class="sub">Google Takeout</span>
+    </div>
+    <div class="spacer"></div>
+    <span id="status" class="status"></span>
+    <label class="pick">
+      Choose Takeout folder
+      <input type="file" id="folder" webkitdirectory multiple>
+    </label>
+    <button class="ghost" id="themeBtn" title="Toggle light / dark" aria-label="Toggle light or dark theme">◐</button>
   </header>
-  <main>
-    <aside>
-      <div class="panel-title">Metrics</div>
-      <div id="list"><div class="empty">Pick your extracted Takeout folder to begin.</div></div>
-      <div class="panel-title">ECG</div>
-      <div id="ecgreadings"></div>
-      <div class="panel-title">Activities</div>
-      <div id="activities"></div>
-    </aside>
-    <section>
-      <div class="viewhead"><span id="context">Pick a Takeout folder to begin</span></div>
-      <div class="toolbar">
-        <span id="status"></span>
-        <span id="chartctl" class="hidden">markers:
-          <label><input type="checkbox" id="showAct" checked> activities</label>
-          <label><input type="checkbox" id="showEcg" checked> ECG</label>
-        </span>
-        <span id="mapctl" class="hidden">colour by
-          <select id="colorby"></select>
-          <span id="legend"></span>
-        </span>
-        <span id="ecgmeta" class="hidden"></span>
+
+  <div class="filters" id="filters">
+    <div class="fgroup">
+      <span class="flabel">Range</span>
+      <div class="segmented" id="ranges" role="group" aria-label="Time range">
+        <button data-days="1" aria-pressed="false">Day</button>
+        <button data-days="7" aria-pressed="false">Week</button>
+        <button data-days="30" aria-pressed="false">Month</button>
+        <button data-days="365" aria-pressed="false">Year</button>
+        <button data-days="0" aria-pressed="false">All</button>
       </div>
-      <div class="view">
-        <div id="chart"></div>
+    </div>
+    <div class="fgroup" style="min-width:0">
+      <span class="flabel">Metrics</span>
+      <div class="chips" id="chips"><span class="status">Pick your extracted Takeout folder to begin.</span></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost" id="tableBtn" aria-pressed="false">Table</button>
+  </div>
+
+  <main>
+    <div class="content">
+      <div class="kpis" id="kpis"></div>
+      <div class="lanes" id="lanes">
+        <div class="empty-note">Choose your extracted Takeout folder to load your health timeline.</div>
+      </div>
+      <div class="coverage hidden" id="coverage">
+        <div class="k">Data coverage — click or drag to jump</div>
+        <canvas id="covcanvas"></canvas>
+        <div class="legend">
+          <span><i style="background:var(--s1)"></i>heart rate</span>
+          <span><i style="background:var(--s3)"></i>activities</span>
+          <span><i style="background:var(--critical)"></i>ECG</span>
+          <span id="covrange"></span>
+        </div>
+      </div>
+      <div class="tablewrap hidden" id="tablewrap">
+        <div class="k">Daily heart rate — table view</div>
+        <div class="tscroll"><table id="dtable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <aside class="inspector">
+      <div id="inspWhen" class="insp-when">Nothing selected</div>
+      <div id="inspSub" class="insp-sub"></div>
+      <div id="inspBody">
+        <p class="insp-hint">Move across the timeline to read every metric at that instant, or click to pin a moment.</p>
+      </div>
+    </aside>
+  </main>
+
+  <div class="overlay hidden" id="overlay">
+    <div class="sheet">
+      <header>
+        <div class="brand" id="sheetTitle">Detail</div>
+        <div class="spacer"></div>
+        <button class="ghost" id="sheetClose" aria-label="Close">✕</button>
+      </header>
+      <div class="body">
         <div id="map" class="hidden"></div>
         <div id="ecg" class="hidden"></div>
       </div>
-    </section>
-  </main>
+      <div class="foot">
+        <span id="sheetMeta"></span>
+        <span class="spacer"></span>
+        <span id="sheetCtl" class="hidden">colour by <select id="colorby"></select> <span id="legend"></span></span>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-hotline@0.4.0/dist/leaflet.hotline.min.js"></script>
