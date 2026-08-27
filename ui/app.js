@@ -355,9 +355,23 @@ function updateInspector(t, pinned) {
     activityResult.textContent = activityProbFiles.has(activityKey) ? 'Reading the watch classifier …' : 'No classifier file for this date.';
     loadActivityContext(t, activityResult);
   } else {
-    activityResult.textContent = activityProbFiles.has(activityKey)
-      ? 'Click to pin this moment and identify the activity.'
-      : 'No classifier file for this date.';
+    if (activityProbFiles.has(activityKey)) {
+      const pin = document.createElement('button');
+      pin.className = 'pin-moment';
+      pin.type = 'button';
+      pin.textContent = 'Pin this moment';
+      pin.addEventListener('click', () => {
+        pinnedT = t;
+        updateInspector(t, true);
+      });
+      activityResult.appendChild(pin);
+      const hint = document.createElement('span');
+      hint.className = 'pin-hint';
+      hint.textContent = 'or click the chart at this time';
+      activityResult.appendChild(hint);
+    } else {
+      activityResult.textContent = 'No classifier file for this date.';
+    }
   }
 
   if (!any) {
