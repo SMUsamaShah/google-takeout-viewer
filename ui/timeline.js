@@ -365,16 +365,21 @@ function addPanZoom(u, setWindow, extent, onPick) {
     if (u.over.hasPointerCapture?.(e.pointerId)) u.over.releasePointerCapture(e.pointerId);
     u.over.style.cursor = 'grab';
   };
-  u.over.addEventListener('pointerup', end);
-  u.over.addEventListener('pointercancel', end);
-
-  u.over.addEventListener('click', (e) => {
-    if (moved || !onPick) return;
+  const pickAt = (e) => {
+    if (e.shiftKey || !onPick) return;
     const rect = u.over.getBoundingClientRect();
     const t = u.posToVal(e.clientX - rect.left, 'x');
-    // clientX/Y ride along so a lane that has clickable marks (the ribbon) can hit-test.
+    // Use pointerup instead of click: the overlay also owns pointer capture for panning,
+    // and click can be suppressed by browsers after a captured touch interaction.
     if (Number.isFinite(t)) onPick({ t, event: null, clientX: e.clientX, clientY: e.clientY });
+  };
+  u.over.addEventListener('pointerup', (e) => {
+    if (!panning) return;
+    const shouldPick = !moved;
+    end(e);
+    if (shouldPick) pickAt(e);
   });
+  u.over.addEventListener('pointercancel', end);
 
   u.over.addEventListener('wheel', (e) => {
     e.preventDefault();
